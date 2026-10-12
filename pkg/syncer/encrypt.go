@@ -67,6 +67,19 @@ type EncryptOptions struct {
 	Keys KeyOptions
 }
 
+// EncryptReport summarises an EncryptDirectory run. Paths are relative to the
+// root and slash separated.
+type EncryptReport struct {
+	// Encrypted lists files encrypted during this run.
+	Encrypted []string
+	// Skipped lists files that were already encrypted and left untouched.
+	Skipped []string
+	// StrayPlaintext lists raw plaintext files whose encrypted envelope
+	// already exists. They are left untouched and should be deleted so the
+	// plaintext is not kept in the clear.
+	StrayPlaintext []string
+}
+
 // EncryptDirectory walks opts.Dir and encrypts every supported file using the
 // `sops` binary.
 //
@@ -75,10 +88,15 @@ type EncryptOptions struct {
 //   - Raw files (.txt, .pem, .key) are wrapped into a SOPS raw envelope and
 //     written next to the original as "<name>.sops.json".
 //
-// Files that are already encrypted, and raw envelopes, are skipped so the
-// command can be re-run as the directory grows.
-func EncryptDirectory(opts EncryptOptions) error {
-	return filepath.WalkDir(opts.Dir, func(p string, d fs.DirEntry, err error) error {
+// The command is idempotent: already-encrypted files are skipped, and a raw
+// file whose envelope already exists is never re-encrypted (which would cost
+// extra KMS calls and clobber manual fixes). Such leftover plaintext files are
+// reported in EncryptReport.StrayPlaintext so the caller can prompt for
+// deletion.
+func EncryptDirectory(opts EncryptOptions) (EncryptReport, error) {
+	var report EncryptReport
+
+	err := filepath.WalkDir(opts.Dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -89,28 +107,55 @@ func EncryptDirectory(opts EncryptOptions) error {
 			return nil
 		}
 
+		rel, err := filepath.Rel(opts.Dir, p)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+
 		switch filepath.Ext(p) {
 		case ".yaml", ".yml", ".json":
 			encrypted, err := isEncryptedFile(p)
-			if err != nil || encrypted {
-				return err
-			}
-			args := append([]string{"encrypt", "--in-place"}, opts.Keys.args()...)
-			_, err = runSops(append(args, p))
-			return err
-
-		case ".txt", ".pem", ".key":
-			args := append([]string{
-				"encrypt", "--input-type", "binary", "--output-type", "json",
-			}, opts.Keys.args()...)
-			out, err := runSops(append(args, p))
 			if err != nil {
 				return err
 			}
-			return os.WriteFile(p+keypath.SOPSRawSuffix, out, 0o644)
+			if encrypted {
+				report.Skipped = append(report.Skipped, rel)
+				return nil
+			}
+			if _, err := runSops(encryptArgs(opts.Keys, []string{"--in-place"}, p)); err != nil {
+				return err
+			}
+			report.Encrypted = append(report.Encrypted, rel)
+			return nil
+
+		case ".txt", ".pem", ".key":
+			if _, statErr := os.Stat(p + keypath.SOPSRawSuffix); statErr == nil {
+				report.StrayPlaintext = append(report.StrayPlaintext, rel)
+				return nil
+			}
+			out, err := runSops(encryptArgs(opts.Keys, []string{"--input-type", "binary", "--output-type", "json"}, p))
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(p+keypath.SOPSRawSuffix, out, 0o644); err != nil {
+				return err
+			}
+			report.Encrypted = append(report.Encrypted, rel)
+			return nil
 		}
 		return nil
 	})
+
+	return report, err
+}
+
+// encryptArgs builds a `sops encrypt` invocation: the mode flags come first,
+// then the key flags, and the file argument last.
+func encryptArgs(keys KeyOptions, modeFlags []string, file string) []string {
+	args := append([]string{"encrypt"}, modeFlags...)
+	args = append(args, keys.args()...)
+	return append(args, file)
 }
 
 // runSops executes the sops binary and returns its stdout. Failures include

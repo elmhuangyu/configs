@@ -58,6 +58,8 @@ model that delivers lock-free reads and transaction-level atomic hot reloads.
 │   └── syncer/               # shared sync/encryption core used by the CLI
 │       ├── encrypt.go
 │       └── push.go
+├── scripts/
+│   └── prune-plaintext.sh    # delete plaintext files that have an envelope
 └── go.mod
 ```
 
@@ -183,6 +185,11 @@ cfgctl encrypt ./config \
 * **Idempotent**: files that are already encrypted (contain a `sops:` marker) and
   existing `*.sops.json` envelopes are skipped, so the whole directory can be
   re-encrypted safely as new files appear.
+* **Leftover plaintext is reported**: a raw file whose `<name>.sops.json`
+  envelope already exists is never re-encrypted (that would cost extra KMS calls
+  and clobber manual fixes). It is reported as stray plaintext so you can delete
+  it; `scripts/prune-plaintext.sh <dir>` removes exactly those files (add
+  `--dry-run` to preview).
 
 Key-selection flags are forwarded verbatim to `sops`, with the same names and
 semantics (comma-separated values):

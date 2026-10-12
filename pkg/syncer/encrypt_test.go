@@ -69,28 +69,32 @@ func TestEncryptDirectoryForwardsKeysAndSkipsEncrypted(t *testing.T) {
 	// Already encrypted structured file: skipped.
 	require.NoError(t, os.WriteFile(filepath.Join(root, "already.enc.yaml"),
 		[]byte("log_level: ENC[AES,data:xxx]\nsops:\n  version: 3.13.3\n"), 0o644))
-	// Raw file: produces a sibling envelope.
+	// Raw file with no envelope: produces a sibling envelope.
 	require.NoError(t, os.WriteFile(filepath.Join(root, "agents", "coder", "prompt.txt"), []byte("hello"), 0o644))
-	// Existing envelope: left untouched.
-	require.NoError(t, os.WriteFile(filepath.Join(root, "agents", "coder", "cert.pem.sops.json"), []byte("ORIGINAL"), 0o644))
+	// Raw file whose envelope already exists: must be skipped, not re-encrypted.
+	require.NoError(t, os.WriteFile(filepath.Join(root, "key.pem"), []byte("PLAINTEXT-KEY"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "key.pem.sops.json"), []byte("ORIGINAL"), 0o644))
 
 	const resource = "projects/p/locations/us-central1/keyRings/sops/cryptoKeys/sops-key"
-	err := EncryptDirectory(EncryptOptions{
+	report, err := EncryptDirectory(EncryptOptions{
 		Dir:  root,
 		Keys: KeyOptions{GCPKMS: resource},
 	})
 	require.NoError(t, err)
 
+	assert.ElementsMatch(t, []string{"global.yaml", "agents/coder/prompt.txt"}, report.Encrypted)
+	assert.Equal(t, []string{"already.enc.yaml"}, report.Skipped)
+	assert.Equal(t, []string{"key.pem"}, report.StrayPlaintext)
+
 	joined := strings.Join(invocations(), "\n")
 
-	// The GCP key is forwarded to both the structured and the raw invocation.
+	// The GCP key is forwarded to both the structured and the raw invocation,
+	// and the stray plaintext never reaches sops.
 	assert.Equal(t, 2, strings.Count(joined, "--gcp-kms "+resource))
 	assert.Contains(t, joined, "encrypt --in-place")
-	assert.Contains(t, joined, "--input-type binary --output-type json")
-
-	// Already-encrypted inputs are skipped.
+	assert.Contains(t, joined, "encrypt --input-type binary --output-type json")
 	assert.NotContains(t, joined, "already.enc.yaml")
-	assert.NotContains(t, joined, "cert.pem")
+	assert.NotContains(t, joined, "key.pem ")
 
 	// Raw encryption wrote the envelope next to the original.
 	envelope, err := os.ReadFile(filepath.Join(root, "agents", "coder", "prompt.txt.sops.json"))
@@ -98,7 +102,7 @@ func TestEncryptDirectoryForwardsKeysAndSkipsEncrypted(t *testing.T) {
 	assert.Contains(t, string(envelope), `"sops":`)
 
 	// The pre-existing envelope keeps its contents.
-	kept, err := os.ReadFile(filepath.Join(root, "agents", "coder", "cert.pem.sops.json"))
+	kept, err := os.ReadFile(filepath.Join(root, "key.pem.sops.json"))
 	require.NoError(t, err)
 	assert.Equal(t, []byte("ORIGINAL"), kept)
 }
@@ -109,7 +113,8 @@ func TestEncryptDirectoryWithoutKeys(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "global.yaml"), []byte("a: b\n"), 0o644))
 
-	require.NoError(t, EncryptDirectory(EncryptOptions{Dir: root}))
+	_, err := EncryptDirectory(EncryptOptions{Dir: root})
+	require.NoError(t, err)
 
 	joined := strings.Join(invocations(), "\n")
 	assert.Contains(t, joined, "encrypt --in-place")
