@@ -1,43 +1,46 @@
 package configlib
 
 import (
-	"bytes"
 	"fmt"
 
 	"github.com/getsops/sops/v3/decrypt"
+
+	"github.com/elmhuangyu/configs/pkg/sopsenv"
 )
 
-// sopsMarker is the substring that every SOPS envelope contains, regardless of
-// whether the document is structured YAML/JSON or a raw binary envelope.
-var sopsMarker = []byte("sops:")
-
-// sopsMarkerJSON is the JSON spelling of the same marker.
-var sopsMarkerJSON = []byte(`"sops":`)
-
-// decryptFormats lists the SOPS stores to try, ordered from most specific to
-// least specific.
+// decryptFormats lists the SOPS stores to try for a structured document,
+// ordered from most specific to least specific:
 //
-//   - "binary" matches raw-mode envelopes (the "*.sops.json" files produced by
-//     `cfgctl encrypt` for .txt/.pem/.key files) which wrap the payload in a
-//     single top-level "data" key.
-//   - "yaml" matches structured YAML documents, including per-field encryption.
-//   - "json" matches structured JSON documents.
+//   - "yaml" matches structured YAML, including per-field encryption.
+//   - "json" matches structured JSON.
 //
-// A failed attempt simply yields an error; successful attempts are returned
-// immediately. Structured YAML never loads through the binary store because the
-// binary store reuses the JSON parser, which rejects non-JSON input.
-var decryptFormats = []string{"binary", "yaml", "json"}
+// Because JSON is a subset of YAML, trying "yaml" first covers both.
+var decryptFormats = []string{"yaml", "json"}
 
-// DecryptIfNeeded transparently decrypts SOPS payloads and passes plaintext
-// through untouched. The sniffing is a cheap substring check so unencrypted
-// values incur no measurable overhead.
+// rawDecryptFormats additionally tries the "binary" store first. It is used for
+// raw-mode envelopes, whose payload is wrapped in a single top-level "data" key.
+var rawDecryptFormats = []string{"binary", "yaml", "json"}
+
+// DecryptIfNeeded transparently decrypts SOPS envelopes and passes plaintext
+// through untouched. Envelope detection is structural (a top-level "sops" key,
+// see sopsenv), so plaintext that merely contains the word "sops" is not
+// mistaken for an envelope. A cheap substring pre-filter keeps the plaintext
+// path allocation-free.
 func DecryptIfNeeded(raw []byte) ([]byte, error) {
-	if !bytes.Contains(raw, sopsMarker) && !bytes.Contains(raw, sopsMarkerJSON) {
+	if !sopsenv.IsEnvelope(raw) {
 		return raw, nil
 	}
 
+	// Only a top-level {data, sops} mapping is a raw-mode envelope; a
+	// structured document with a "data" field must not be routed to the binary
+	// store, which would drop every other field.
+	formats := decryptFormats
+	if sopsenv.IsBinaryEnvelope(raw) {
+		formats = rawDecryptFormats
+	}
+
 	var lastErr error
-	for _, format := range decryptFormats {
+	for _, format := range formats {
 		decrypted, err := decrypt.Data(raw, format)
 		if err == nil {
 			return decrypted, nil

@@ -55,6 +55,8 @@ model that delivers lock-free reads and transaction-level atomic hot reloads.
 │   │   └── source_mem.go     # in-memory driver (unit-test mock)
 │   ├── keypath/              # path <-> logical key convention (no heavy deps)
 │   │   └── keypath.go
+│   ├── sopsenv/              # structural SOPS envelope detection (shared)
+│   │   └── sopsenv.go
 │   └── syncer/               # shared sync/encryption core used by the CLI
 │       ├── encrypt.go
 │       ├── ignore.go         # .cfgctlignore handling + built-in excludes
@@ -290,14 +292,17 @@ secrets/
    restart) and emits a catch-up snapshot on each reconnect, so changes missed
    while disconnected are reconciled. Recoverable failures are surfaced through
    `OnError` instead of being swallowed.
-4. **Transparent decryption**: `DecryptIfNeeded` first does a cheap `sops:` substring
-   sniff and passes plaintext through at zero cost. On a hit it tries the SOPS stores
-   in the order `binary -> yaml -> json`:
-   * `binary` matches raw-mode envelopes (`*.sops.json`) whose payload is wrapped in a
-     top-level `data` key; `cfgctl encrypt` accordingly uses
-     `--input-type binary --output-type json`;
-   * because JSON is a subset of YAML, trying `yaml` before `json` covers both
+4. **Transparent decryption with structural detection**: whether a value is a SOPS
+   envelope is decided structurally (a top-level `sops` key), after a cheap `sops`
+   substring pre-filter. Plaintext that merely mentions "sops" is never mistaken for
+   an envelope, which would otherwise stall reloads (and, on the CLI side, silently
+   skip encrypting a secret). Store selection is then:
+   * a raw-mode envelope has exactly the top-level keys `{data, sops}` and is routed
+     to the `binary` store first; a structured document with its own `data` field is
+     not, so its remaining fields are preserved;
+   * otherwise `yaml` is tried before `json` (JSON is a subset of YAML), covering both
      structured formats.
+   The detection lives in `pkg/sopsenv`, shared by the library and the CLI.
 5. **Encryption decoupled from logical paths**: `.sops.json` is only a disk
    representation, stripped to a logical path on both push and read, keeping
    encryption fully hidden from business structs. The path<->logical-key convention

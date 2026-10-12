@@ -9,11 +9,8 @@ import (
 	"strings"
 
 	"github.com/elmhuangyu/configs/pkg/keypath"
+	"github.com/elmhuangyu/configs/pkg/sopsenv"
 )
-
-// sopsMarkers are the substrings present in every SOPS envelope. They are used
-// to detect already-encrypted files so encryption stays idempotent.
-var sopsMarkers = [][]byte{[]byte("sops:"), []byte(`"sops":`)}
 
 // KeyOptions holds the SOPS master-key selection flags forwarded to the sops
 // binary. Empty fields are omitted, in which case sops falls back to its own
@@ -163,16 +160,13 @@ func runSops(args []string) ([]byte, error) {
 	return out, nil
 }
 
-// isEncryptedFile reports whether the file already carries a SOPS envelope.
+// isEncryptedFile reports whether the file already carries a SOPS envelope. The
+// detection is structural, so a plaintext file that merely mentions "sops" in a
+// value is still encrypted rather than silently skipped.
 func isEncryptedFile(path string) (bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false, err
 	}
-	for _, marker := range sopsMarkers {
-		if bytes.Contains(data, marker) {
-			return true, nil
-		}
-	}
-	return false, nil
+	return sopsenv.IsEnvelope(data), nil
 }

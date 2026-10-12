@@ -55,10 +55,37 @@ func encryptFixture(t *testing.T, store sops.Store, plaintext []byte) []byte {
 }
 
 func TestDecryptIfNeededPassesPlaintextThrough(t *testing.T) {
-	raw := []byte("just a plain prompt with no secrets")
-	out, err := DecryptIfNeeded(raw)
+	for _, raw := range [][]byte{
+		[]byte("just a plain prompt with no secrets"),
+		// Contains the substring "sops" but is not an envelope; must pass
+		// through rather than failing decryption and stalling reloads.
+		[]byte("notes: \"this mentions sops: as a topic\"\n"),
+		[]byte("a prompt that says sops: is great"),
+	} {
+		out, err := DecryptIfNeeded(raw)
+		require.NoError(t, err)
+		assert.Equal(t, raw, out)
+	}
+}
+
+func TestDecryptIfNeededStructuredDataField(t *testing.T) {
+	t.Setenv(sopsage.SopsAgeKeyEnv, mockAgeIdentity)
+
+	// A structured JSON document that has its own top-level "data" field must
+	// not be routed to the binary store, which would drop every other field.
+	plaintext := []byte(`{"data":"hello","version":2}`)
+	encrypted := encryptFixture(t, sopsjson.NewStore(&config.JSONStoreConfig{}), plaintext)
+
+	out, err := DecryptIfNeeded(encrypted)
 	require.NoError(t, err)
-	assert.Equal(t, raw, out)
+
+	var got struct {
+		Data    string `yaml:"data"`
+		Version int    `yaml:"version"`
+	}
+	require.NoError(t, yaml.Unmarshal(out, &got), "output was: %s", out)
+	assert.Equal(t, "hello", got.Data)
+	assert.Equal(t, 2, got.Version)
 }
 
 func TestDecryptIfNeededRawEnvelope(t *testing.T) {

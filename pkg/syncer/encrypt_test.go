@@ -121,6 +121,23 @@ func TestEncryptDirectoryWithoutKeys(t *testing.T) {
 	assert.NotContains(t, joined, "--gcp-kms")
 }
 
+func TestEncryptDirectoryEncryptsPlaintextMentioningSops(t *testing.T) {
+	invocations := stubSops(t)
+
+	root := t.TempDir()
+	// The value contains the substring "sops" but there is no top-level sops
+	// key, so the file is plaintext and must be encrypted, not skipped.
+	require.NoError(t, os.WriteFile(filepath.Join(root, "notes.yaml"),
+		[]byte("notes: \"about sops: tooling\"\n"), 0o644))
+
+	report, err := EncryptDirectory(EncryptOptions{Dir: root})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"notes.yaml"}, report.Encrypted)
+	assert.Empty(t, report.Skipped)
+	assert.NotEmpty(t, invocations())
+}
+
 func TestEncryptDirectoryHonorsIgnore(t *testing.T) {
 	invocations := stubSops(t)
 
