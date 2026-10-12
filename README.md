@@ -306,7 +306,9 @@ re-include a specific file.
    per event.
 2. **Defensive reload**: a revision that fails to bind is dropped and the previous
    config is retained, so a broken config can never crash the process.
-3. **Watch never goes silently stale**: the etcd driver re-establishes the watch
+3. **Watch never goes silently stale**: the etcd driver resumes the watch from the
+   revision of the last fetch (`WithRev(fetchRev+1)`), so changes landing between
+   the initial fetch and the watch are not missed; and it re-establishes the watch
    with a 10s backoff whenever the server cancels the stream (compaction, member
    restart) and emits a catch-up snapshot on each reconnect, so changes missed
    while disconnected are reconciled. Recoverable failures are surfaced through

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -26,6 +27,9 @@ type EtcdSource struct {
 	prefix     string
 	retryDelay time.Duration
 	onError    func(error)
+	// lastRev is the revision of the most recent Fetch. Watching resumes from
+	// lastRev+1 so no change is lost between a fetch and the watch it feeds.
+	lastRev atomic.Int64
 }
 
 // NewEtcdSource creates an EtcdSource. The prefix is normalised to end with a
@@ -54,7 +58,8 @@ func (s *EtcdSource) reportError(err error) {
 	}
 }
 
-// Fetch reads all keys under the prefix in a single range request.
+// Fetch reads all keys under the prefix in a single range request. It records
+// the read revision so the subsequent Watch can resume exactly after it.
 func (s *EtcdSource) Fetch(ctx context.Context) (*Snapshot, error) {
 	resp, err := s.client.Get(ctx, s.prefix, clientv3.WithPrefix())
 	if err != nil {
@@ -67,18 +72,22 @@ func (s *EtcdSource) Fetch(ctx context.Context) (*Snapshot, error) {
 		kvs[relPath] = kv.Value
 	}
 
+	s.lastRev.Store(resp.Header.Revision)
+
 	return &Snapshot{
 		KVs:      kvs,
 		Revision: resp.Header.Revision,
 	}, nil
 }
 
-// Watch observes the prefix and emits a full snapshot on every change. When the
-// server cancels the stream (for example after a compaction, or a member
-// restart) the watch is re-established after retryDelay. On every reconnect a
-// fresh snapshot is emitted so the consumer catches up on changes that happened
-// while it was disconnected. Recoverable failures are surfaced through OnError,
-// so the watch never goes silently stale.
+// Watch observes the prefix and emits a full snapshot on every change. The
+// watch resumes from the revision of the most recent Fetch (see Fetch), so
+// changes that land between the initial fetch and the watch are not missed.
+// When the server cancels the stream (for example after a compaction, or a
+// member restart) the watch is re-established after retryDelay. On every
+// reconnect a fresh snapshot is emitted so the consumer catches up on changes
+// that happened while it was disconnected. Recoverable failures are surfaced
+// through OnError, so the watch never goes silently stale.
 func (s *EtcdSource) Watch(ctx context.Context) (<-chan *Snapshot, error) {
 	out := make(chan *Snapshot)
 
@@ -126,9 +135,16 @@ func (s *EtcdSource) Watch(ctx context.Context) (<-chan *Snapshot, error) {
 }
 
 // session consumes a single watch stream, emitting a snapshot for every event,
-// and returns a human-readable reason once the stream ends.
+// and returns a human-readable reason once the stream ends. When a prior Fetch
+// recorded a revision, the watch resumes from the next revision (WithRev), so
+// changes that landed between the fetch and the watch are not missed.
 func (s *EtcdSource) session(ctx context.Context, out chan<- *Snapshot) string {
-	rch := s.client.Watch(ctx, s.prefix, clientv3.WithPrefix())
+	opts := []clientv3.OpOption{clientv3.WithPrefix()}
+	if rev := s.lastRev.Load(); rev > 0 {
+		opts = append(opts, clientv3.WithRev(rev+1))
+	}
+
+	rch := s.client.Watch(ctx, s.prefix, opts...)
 	for wresp := range rch {
 		if wresp.Canceled {
 			if err := wresp.Err(); err != nil {

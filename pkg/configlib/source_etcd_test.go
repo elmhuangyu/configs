@@ -33,6 +33,7 @@ type fakeEtcd struct {
 	kvs      map[string][]byte
 	revision int64
 	streams  []*fakeStream
+	watchRev []int64
 }
 
 func newFakeEtcd() *fakeEtcd {
@@ -91,10 +92,11 @@ func (f *fakeEtcd) Get(_ context.Context, prefix string, _ ...clientv3.OpOption)
 	return resp, nil
 }
 
-func (f *fakeEtcd) Watch(ctx context.Context, _ string, _ ...clientv3.OpOption) clientv3.WatchChan {
+func (f *fakeEtcd) Watch(ctx context.Context, _ string, opts ...clientv3.OpOption) clientv3.WatchChan {
 	s := &fakeStream{ch: make(chan clientv3.WatchResponse, 8)}
 	f.mu.Lock()
 	f.streams = append(f.streams, s)
+	f.watchRev = append(f.watchRev, clientv3.OpGet("", opts...).Rev())
 	f.mu.Unlock()
 
 	go func() {
@@ -102,6 +104,55 @@ func (f *fakeEtcd) Watch(ctx context.Context, _ string, _ ...clientv3.OpOption) 
 		s.close()
 	}()
 	return s.ch
+}
+
+func (f *fakeEtcd) lastWatchRev() int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.watchRev) == 0 {
+		return -1
+	}
+	return f.watchRev[len(f.watchRev)-1]
+}
+
+func TestEtcdSourceWatchResumesAfterFetch(t *testing.T) {
+	fake := newFakeEtcd()
+	fake.put("/cfg/mode", "prod") // revision 1
+
+	src := newEtcdSource(fake, "/cfg")
+
+	// The manager fetches first, which records the revision the watch must
+	// resume from, closing the window between fetch and watch.
+	snap, err := src.Fetch(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, int64(1), snap.Revision)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, err = src.Watch(ctx)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool { return fake.streamCount() == 1 }, time.Second, time.Millisecond)
+	assert.Equal(t, int64(2), fake.lastWatchRev(), "watch must resume from fetchRev+1")
+}
+
+func TestEtcdSourceFetchWithoutPrior(t *testing.T) {
+	fake := newFakeEtcd()
+	fake.put("/cfg/mode", "prod")
+
+	src := newEtcdSource(fake, "/cfg")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Without a prior Fetch the source has no known revision and watches from
+	// now (revision 0 means "latest" in etcd).
+	_, err := src.Watch(ctx)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool { return fake.streamCount() == 1 }, time.Second, time.Millisecond)
+	assert.Equal(t, int64(0), fake.lastWatchRev())
 }
 
 func TestEtcdSourceFetch(t *testing.T) {
