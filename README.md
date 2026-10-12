@@ -156,6 +156,22 @@ cfg := mgr.Get() // pure in-memory read, no lock contention
 All three share the same `key` convention and transparent decryption, so they are
 freely interchangeable.
 
+### 4.4 Error handling
+
+Reload failures are never silent. `ConfigManager.OnError` reports a revision that
+failed to bind (for example when a decryption key is missing); the previous config
+stays active. Sources expose their own `OnError` for asynchronous failures:
+`EtcdSource` reports watch cancellations and fetch errors, `FileSource` reports poll
+errors. All hooks must be set before `Start`.
+
+```go
+mgr.OnError(func(err error) { log.Printf("config reload failed: %v", err) })
+src.OnError(func(err error) { log.Printf("etcd watch problem: %v", err) })
+```
+
+The `pkg/syncer` helpers likewise return results (`EncryptReport`, `PushResult`)
+rather than printing, leaving all output to the CLI.
+
 ---
 
 ## 5. Operations CLI (`cmd/cfgctl`)

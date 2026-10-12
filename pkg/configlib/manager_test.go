@@ -74,6 +74,35 @@ func TestManagerKeepsPreviousConfigOnBadRevision(t *testing.T) {
 	assert.Equal(t, int64(1), m.Revision())
 }
 
+func TestManagerReportsBindFailure(t *testing.T) {
+	type strictConfig struct {
+		Manifest struct {
+			Count int `yaml:"count"`
+		} `key:"manifest.yaml"`
+	}
+
+	src := NewMemSource(FlattenKVs{"manifest.yaml": []byte("count: 1\n")})
+	m := NewManager[strictConfig](src)
+
+	errs := make(chan error, 1)
+	m.OnError(func(err error) { errs <- err })
+
+	require.NoError(t, m.Start(context.Background()))
+
+	// A malformed revision is dropped but must be reported.
+	src.Set(FlattenKVs{"manifest.yaml": []byte("count: not-an-int\n")})
+
+	select {
+	case err := <-errs:
+		assert.Contains(t, err.Error(), "bind revision")
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for OnError")
+	}
+
+	// The previous config stays active.
+	assert.Equal(t, 1, m.Get().Manifest.Count)
+}
+
 func TestManagerConcurrentReads(t *testing.T) {
 	src := NewMemSource(FlattenKVs{"mode": []byte("prod")})
 	m := NewManager[watchConfig](src)

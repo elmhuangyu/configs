@@ -39,12 +39,23 @@ func runPush(args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	return syncer.PushDirectory(ctx, syncer.PushOptions{
+	result, err := syncer.PushDirectory(ctx, syncer.PushOptions{
 		Dir:       fs.Arg(0),
 		Prefix:    *prefix,
 		Endpoints: splitEndpoints(*endpoints),
 		Prune:     *prune,
 	})
+	if err != nil {
+		return err
+	}
+
+	if result.Puts == 0 && result.Deletes == 0 {
+		fmt.Printf("Nothing to push to %s\n", result.Prefix)
+		return nil
+	}
+	fmt.Printf("Pushed %d put(s) and %d delete(s) to %s at revision %d\n",
+		result.Puts, result.Deletes, result.Prefix, result.Revision)
+	return nil
 }
 
 func splitEndpoints(raw string) []string {

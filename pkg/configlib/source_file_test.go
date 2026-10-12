@@ -38,6 +38,38 @@ func TestFileSourcePrefersEncryptedEnvelope(t *testing.T) {
 	assert.Equal(t, []byte(`{"sops":{}}`), snap.KVs["prompt.txt"])
 }
 
+func TestFileSourceReportsPollError(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "a"), []byte("1"), 0o644))
+
+	src := NewFileSource(root)
+	src.interval = 10 * time.Millisecond
+
+	errs := make(chan error, 1)
+	src.OnError(func(err error) {
+		select {
+		case errs <- err:
+		default:
+		}
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, err := src.Watch(ctx)
+	require.NoError(t, err)
+
+	// Removing the directory makes subsequent polls fail.
+	require.NoError(t, os.RemoveAll(root))
+
+	select {
+	case err := <-errs:
+		assert.Contains(t, err.Error(), "reload")
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for poll error report")
+	}
+}
+
 func TestFileSourceWatchEmitsOnChange(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "mode")

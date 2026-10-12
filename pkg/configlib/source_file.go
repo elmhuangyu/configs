@@ -3,6 +3,7 @@ package configlib
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -19,12 +20,24 @@ type FileSource struct {
 	root     string
 	interval time.Duration
 	revision atomic.Int64
+	onError  func(error)
 }
 
 // NewFileSource creates a FileSource rooted at root, polling for changes once
 // per second.
 func NewFileSource(root string) *FileSource {
 	return &FileSource{root: root, interval: time.Second}
+}
+
+// OnError registers a callback for polling failures. Set it before Start.
+func (s *FileSource) OnError(fn func(error)) {
+	s.onError = fn
+}
+
+func (s *FileSource) reportError(err error) {
+	if s.onError != nil {
+		s.onError(err)
+	}
 }
 
 // Fetch reads the whole directory tree.
@@ -59,7 +72,11 @@ func (s *FileSource) Watch(ctx context.Context) (<-chan *Snapshot, error) {
 				return
 			case <-ticker.C:
 				kvs, err := loadDir(s.root)
-				if err != nil || equalKVs(last, kvs) {
+				if err != nil {
+					s.reportError(fmt.Errorf("reload %s: %w", s.root, err))
+					continue
+				}
+				if equalKVs(last, kvs) {
 					continue
 				}
 				last = kvs

@@ -24,12 +24,25 @@ type PushOptions struct {
 	Prune bool
 }
 
+// PushResult summarises a push operation.
+type PushResult struct {
+	// Prefix is the normalised etcd key prefix that was written.
+	Prefix string
+	// Puts is the number of keys written.
+	Puts int
+	// Deletes is the number of keys removed (only with Prune).
+	Deletes int
+	// Revision is the etcd revision the transaction committed at, or 0 when
+	// there was nothing to push.
+	Revision int64
+}
+
 // PushDirectory dials etcd and publishes opts.Dir under opts.Prefix in a single
 // atomic transaction.
-func PushDirectory(ctx context.Context, opts PushOptions) error {
+func PushDirectory(ctx context.Context, opts PushOptions) (PushResult, error) {
 	client, err := clientv3.New(clientv3.Config{Endpoints: opts.Endpoints})
 	if err != nil {
-		return err
+		return PushResult{}, err
 	}
 	defer func() { _ = client.Close() }()
 
@@ -38,16 +51,18 @@ func PushDirectory(ctx context.Context, opts PushOptions) error {
 
 // Push publishes opts.Dir under opts.Prefix using the supplied client. All puts
 // and deletes are committed in one clientv3.Txn so the cluster advances to a
-// single revision.
-func Push(ctx context.Context, client *clientv3.Client, opts PushOptions) error {
+// single revision. It returns statistics rather than printing them.
+func Push(ctx context.Context, client *clientv3.Client, opts PushOptions) (PushResult, error) {
 	prefix := opts.Prefix
 	if !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
 
+	result := PushResult{Prefix: prefix}
+
 	local, err := CollectLocalFiles(opts.Dir)
 	if err != nil {
-		return err
+		return PushResult{}, err
 	}
 
 	// Sort for deterministic operation ordering, which also makes the command
@@ -61,34 +76,35 @@ func Push(ctx context.Context, client *clientv3.Client, opts PushOptions) error 
 	ops := make([]clientv3.Op, 0, len(keys))
 	for _, rel := range keys {
 		ops = append(ops, clientv3.OpPut(prefix+rel, string(local[rel])))
+		result.Puts++
 	}
 
 	if opts.Prune {
 		resp, err := client.Get(ctx, prefix, clientv3.WithPrefix(), clientv3.WithKeysOnly())
 		if err != nil {
-			return err
+			return PushResult{}, err
 		}
 		for _, kv := range resp.Kvs {
 			remoteKey := string(kv.Key)
 			rel := strings.TrimPrefix(remoteKey, prefix)
 			if _, ok := local[rel]; !ok {
 				ops = append(ops, clientv3.OpDelete(remoteKey))
+				result.Deletes++
 			}
 		}
 	}
 
 	if len(ops) == 0 {
-		fmt.Printf("Nothing to push to %s\n", prefix)
-		return nil
+		return result, nil
 	}
 
 	txnResp, err := client.Txn(ctx).Then(ops...).Commit()
 	if err != nil {
-		return fmt.Errorf("commit etcd txn: %w", err)
+		return PushResult{}, fmt.Errorf("commit etcd txn: %w", err)
 	}
+	result.Revision = txnResp.Header.Revision
 
-	fmt.Printf("Pushed %d operations to %s at revision %d\n", len(ops), prefix, txnResp.Header.Revision)
-	return nil
+	return result, nil
 }
 
 // CollectLocalFiles flattens dir into logical keys. Ignore rules apply (see

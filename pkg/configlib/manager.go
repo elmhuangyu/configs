@@ -14,6 +14,7 @@ type ConfigManager[T any] struct {
 	ptr      atomic.Pointer[T]
 	revision atomic.Int64
 	onChange func(oldCfg, newCfg *T)
+	onError  func(error)
 }
 
 // NewManager creates a manager bound to source. Call Start to load the initial
@@ -26,6 +27,19 @@ func NewManager[T any](source Source) *ConfigManager[T] {
 // runs on its own goroutine and must be set before Start.
 func (m *ConfigManager[T]) OnChange(fn func(oldCfg, newCfg *T)) {
 	m.onChange = fn
+}
+
+// OnError registers a callback for reload failures. Without it, a revision that
+// fails to bind (for example because a decryption key is missing) is dropped
+// silently and the previous config keeps serving. Set it before Start.
+func (m *ConfigManager[T]) OnError(fn func(error)) {
+	m.onError = fn
+}
+
+func (m *ConfigManager[T]) reportError(err error) {
+	if m.onError != nil {
+		m.onError(err)
+	}
 }
 
 // Get returns the current configuration. It is a pure in-memory load and is
@@ -67,8 +81,10 @@ func (m *ConfigManager[T]) watchLoop(events <-chan *Snapshot) {
 	for snap := range events {
 		nextVal := new(T)
 		// Defensive reload: a malformed revision is dropped instead of
-		// crashing the process with a broken configuration.
+		// crashing the process with a broken configuration. The failure is
+		// reported so it never goes unnoticed.
 		if err := Bind(snap.KVs, nextVal); err != nil {
+			m.reportError(fmt.Errorf("bind revision %d: %w", snap.Revision, err))
 			continue
 		}
 
