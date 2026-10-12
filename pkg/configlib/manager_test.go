@@ -153,6 +153,23 @@ func TestManagerOnChangeSerializedAndCoalesced(t *testing.T) {
 	assert.EqualValues(t, 1, maxConcurrent.Load())
 }
 
+func TestManagerOnChangeAfterStartPanics(t *testing.T) {
+	src := NewMemSource(FlattenKVs{"mode": []byte("prod")})
+	m := NewManager[watchConfig](src)
+	require.NoError(t, m.Start(context.Background()))
+
+	assert.Panics(t, func() { m.OnChange(func(_, _ *watchConfig) {}) })
+	assert.Panics(t, func() { m.OnError(func(error) {}) })
+}
+
+func TestManagerOnChangeBeforeStartDoesNotPanic(t *testing.T) {
+	src := NewMemSource(FlattenKVs{"mode": []byte("prod")})
+	m := NewManager[watchConfig](src)
+
+	assert.NotPanics(t, func() { m.OnChange(func(_, _ *watchConfig) {}) })
+	assert.NotPanics(t, func() { m.OnError(func(error) {}) })
+}
+
 func TestManagerConcurrentReads(t *testing.T) {
 	src := NewMemSource(FlattenKVs{"mode": []byte("prod")})
 	m := NewManager[watchConfig](src)

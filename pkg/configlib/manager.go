@@ -15,6 +15,7 @@ type ConfigManager[T any] struct {
 	revision atomic.Int64
 	onChange func(oldCfg, newCfg *T)
 	onError  func(error)
+	started  atomic.Bool
 	changeCh chan change[T]
 }
 
@@ -27,15 +28,26 @@ func NewManager[T any](source Source) *ConfigManager[T] {
 // OnChange registers a callback invoked after a successful reload. Callbacks run
 // serially on a dedicated goroutine, in order, and are never executed
 // concurrently; a burst of updates is coalesced so only the latest pending
-// change is delivered. It must be set before Start.
+// change is delivered.
+//
+// It must be called before Start; calling it afterwards panics, because the
+// dispatcher is not started and the callback would never fire.
 func (m *ConfigManager[T]) OnChange(fn func(oldCfg, newCfg *T)) {
+	if m.started.Load() {
+		panic("configlib: OnChange must be set before Start")
+	}
 	m.onChange = fn
 }
 
 // OnError registers a callback for reload failures. Without it, a revision that
 // fails to bind (for example because a decryption key is missing) is dropped
-// silently and the previous config keeps serving. Set it before Start.
+// silently and the previous config keeps serving.
+//
+// It must be called before Start; calling it afterwards panics.
 func (m *ConfigManager[T]) OnError(fn func(error)) {
+	if m.started.Load() {
+		panic("configlib: OnError must be set before Start")
+	}
 	m.onError = fn
 }
 
@@ -56,8 +68,11 @@ func (m *ConfigManager[T]) Revision() int64 {
 	return m.revision.Load()
 }
 
-// Start performs the initial fetch and bind, then launches the watch loop.
+// Start performs the initial fetch and bind, then launches the watch loop. Once
+// Start has been called, OnChange and OnError can no longer be set.
 func (m *ConfigManager[T]) Start(ctx context.Context) error {
+	m.started.Store(true)
+
 	snap, err := m.source.Fetch(ctx)
 	if err != nil {
 		return fmt.Errorf("initial fetch failed: %w", err)

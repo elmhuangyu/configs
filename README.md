@@ -171,7 +171,8 @@ Reload failures are never silent. `ConfigManager.OnError` reports a revision tha
 failed to bind (for example when a decryption key is missing); the previous config
 stays active. Sources expose their own `OnError` for asynchronous failures:
 `EtcdSource` reports watch cancellations and fetch errors, `FileSource` reports poll
-errors. All hooks must be set before `Start`.
+errors. All hooks must be set before `Start`; calling `ConfigManager.OnChange` or
+`ConfigManager.OnError` afterwards panics rather than silently doing nothing.
 
 ```go
 mgr.OnError(func(err error) { log.Printf("config reload failed: %v", err) })
