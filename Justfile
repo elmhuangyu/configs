@@ -6,6 +6,10 @@ default:
 build:
     go build -o bin/ ./...
 
+# Install binaries
+install:
+    go install ./cmd/...
+
 # Lint Go code using golangci-lint
 lint:
     golangci-lint run ./...
