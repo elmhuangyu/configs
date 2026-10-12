@@ -12,6 +12,12 @@ import (
 	"github.com/elmhuangyu/configs/pkg/keypath"
 )
 
+// maxTxnBytes bounds the size of a single push transaction. etcd's default
+// --max-request-bytes is 1.5 MiB and it rejects anything larger, so the guard
+// sits just below that to turn an opaque server rejection into a clear local
+// error. Atomicity is preserved: the payload is never split across revisions.
+const maxTxnBytes = 1_500_000
+
 // PushOptions configures a push operation.
 type PushOptions struct {
 	// Dir is the local directory to publish.
@@ -65,32 +71,27 @@ func Push(ctx context.Context, client *clientv3.Client, opts PushOptions) (PushR
 		return PushResult{}, err
 	}
 
-	// Sort for deterministic operation ordering, which also makes the command
-	// output reproducible.
-	keys := make([]string, 0, len(local))
-	for rel := range local {
-		keys = append(keys, rel)
-	}
-	sort.Strings(keys)
-
-	ops := make([]clientv3.Op, 0, len(keys))
-	for _, rel := range keys {
-		ops = append(ops, clientv3.OpPut(prefix+rel, string(local[rel])))
-		result.Puts++
-	}
-
+	var remoteKeys []string
 	if opts.Prune {
 		resp, err := client.Get(ctx, prefix, clientv3.WithPrefix(), clientv3.WithKeysOnly())
 		if err != nil {
 			return PushResult{}, err
 		}
 		for _, kv := range resp.Kvs {
-			remoteKey := string(kv.Key)
-			rel := strings.TrimPrefix(remoteKey, prefix)
-			if _, ok := local[rel]; !ok {
-				ops = append(ops, clientv3.OpDelete(remoteKey))
-				result.Deletes++
-			}
+			remoteKeys = append(remoteKeys, string(kv.Key))
+		}
+	}
+
+	ops, size := buildPushOps(prefix, local, remoteKeys)
+	if err := checkTxnSize(size); err != nil {
+		return PushResult{}, err
+	}
+
+	for _, op := range ops {
+		if op.IsDelete() {
+			result.Deletes++
+		} else {
+			result.Puts++
 		}
 	}
 
@@ -105,6 +106,48 @@ func Push(ctx context.Context, client *clientv3.Client, opts PushOptions) (PushR
 	result.Revision = txnResp.Header.Revision
 
 	return result, nil
+}
+
+// buildPushOps renders the transaction for a push: a Put for every local file
+// plus a Delete for every remote key that no longer exists locally. It returns
+// the ops in deterministic order along with their total key+value size.
+func buildPushOps(prefix string, local map[string][]byte, remoteKeys []string) ([]clientv3.Op, int) {
+	rels := make([]string, 0, len(local))
+	for rel := range local {
+		rels = append(rels, rel)
+	}
+	sort.Strings(rels)
+
+	ops := make([]clientv3.Op, 0, len(rels))
+	total := 0
+	for _, rel := range rels {
+		key := prefix + rel
+		value := local[rel]
+		ops = append(ops, clientv3.OpPut(key, string(value)))
+		total += len(key) + len(value)
+	}
+
+	for _, remoteKey := range remoteKeys {
+		if _, ok := local[strings.TrimPrefix(remoteKey, prefix)]; ok {
+			continue
+		}
+		ops = append(ops, clientv3.OpDelete(remoteKey))
+		total += len(remoteKey)
+	}
+
+	return ops, total
+}
+
+// checkTxnSize rejects a transaction that would exceed etcd's request limit.
+func checkTxnSize(total int) error {
+	if total > maxTxnBytes {
+		return fmt.Errorf(
+			"configuration is %d bytes, exceeding the %d byte single-transaction limit; "+
+				"reduce the payload, split it across prefixes, or raise etcd's --max-request-bytes",
+			total, maxTxnBytes,
+		)
+	}
+	return nil
 }
 
 // CollectLocalFiles flattens dir into logical keys. Ignore rules apply (see

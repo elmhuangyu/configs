@@ -263,6 +263,9 @@ cfgctl push ./config --prefix /myapp/config --endpoints 127.0.0.1:2379 --prune
   an incremental overwrite.
 * If a file has a sibling `<name>.sops.json` envelope, the plaintext original is
   skipped and the encrypted version wins.
+* The whole tree must fit in one transaction: etcd's default request limit is
+  1.5 MiB, and a larger payload fails with a clear local error (rather than being
+  split, which would break atomicity).
 
 ### 5.4 Ignoring files: `.cfgctlignore`
 

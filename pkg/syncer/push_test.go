@@ -31,6 +31,42 @@ func TestCollectLocalFilesEmptyDir(t *testing.T) {
 	assert.Empty(t, files)
 }
 
+func TestBuildPushOps(t *testing.T) {
+	local := map[string][]byte{
+		"a.yaml": []byte("hello"),
+		"dir/b":  []byte("x"),
+	}
+	remote := []string{"/cfg/a.yaml", "/cfg/old"}
+
+	ops, size := buildPushOps("/cfg/", local, remote)
+
+	require.Len(t, ops, 3)
+
+	puts, deletes := 0, 0
+	for _, op := range ops {
+		if op.IsDelete() {
+			deletes++
+		} else {
+			puts++
+		}
+	}
+	assert.Equal(t, 2, puts)
+	assert.Equal(t, 1, deletes)
+
+	// Deterministic order: puts sorted by relative key, then the delete.
+	assert.Equal(t, "/cfg/a.yaml", string(ops[0].KeyBytes()))
+	assert.Equal(t, "/cfg/dir/b", string(ops[1].KeyBytes()))
+	assert.Equal(t, "/cfg/old", string(ops[2].KeyBytes()))
+
+	expected := len("/cfg/a.yaml") + len("hello") + len("/cfg/dir/b") + len("x") + len("/cfg/old")
+	assert.Equal(t, expected, size)
+}
+
+func TestCheckTxnSize(t *testing.T) {
+	assert.NoError(t, checkTxnSize(maxTxnBytes))
+	assert.ErrorContains(t, checkTxnSize(maxTxnBytes+1), "single-transaction limit")
+}
+
 func TestCollectLocalFilesHonorsIgnore(t *testing.T) {
 	root := t.TempDir()
 
