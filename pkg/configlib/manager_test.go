@@ -170,6 +170,38 @@ func TestManagerOnChangeBeforeStartDoesNotPanic(t *testing.T) {
 	assert.NotPanics(t, func() { m.OnError(func(error) {}) })
 }
 
+func TestManagerStrictModeReportsMissingKey(t *testing.T) {
+	src := NewMemSource(FlattenKVs{"mode": []byte("prod"), "level": []byte("info")})
+	m := NewManager[watchConfig](src)
+	m.SetStrict(true)
+
+	errs := make(chan error, 1)
+	m.OnError(func(err error) { errs <- err })
+
+	require.NoError(t, m.Start(context.Background()))
+
+	// level is declared but now absent, so strict binding rejects the revision.
+	src.Set(FlattenKVs{"mode": []byte("staging")})
+
+	select {
+	case err := <-errs:
+		assert.Contains(t, err.Error(), "missing key")
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for strict bind error")
+	}
+
+	// Previous config is retained.
+	assert.Equal(t, "prod", m.Get().Mode)
+}
+
+func TestManagerSetStrictAfterStartPanics(t *testing.T) {
+	src := NewMemSource(FlattenKVs{"mode": []byte("prod")})
+	m := NewManager[watchConfig](src)
+	require.NoError(t, m.Start(context.Background()))
+
+	assert.Panics(t, func() { m.SetStrict(true) })
+}
+
 func TestManagerConcurrentReads(t *testing.T) {
 	src := NewMemSource(FlattenKVs{"mode": []byte("prod")})
 	m := NewManager[watchConfig](src)

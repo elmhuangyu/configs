@@ -15,6 +15,7 @@ type ConfigManager[T any] struct {
 	revision atomic.Int64
 	onChange func(oldCfg, newCfg *T)
 	onError  func(error)
+	strict   bool
 	started  atomic.Bool
 	changeCh chan change[T]
 }
@@ -51,6 +52,25 @@ func (m *ConfigManager[T]) OnError(fn func(error)) {
 	m.onError = fn
 }
 
+// SetStrict enables strict binding: a revision in which a key-tagged leaf field
+// has no matching key is rejected (and reported via OnError) instead of leaving
+// the field zero. This catches misspelled key tags. It must be called before
+// Start; calling it afterwards panics.
+func (m *ConfigManager[T]) SetStrict(strict bool) {
+	if m.started.Load() {
+		panic("configlib: SetStrict must be called before Start")
+	}
+	m.strict = strict
+}
+
+// bind maps a snapshot onto target using the configured mode.
+func (m *ConfigManager[T]) bind(kvs FlattenKVs, target *T) error {
+	if m.strict {
+		return BindStrict(kvs, target)
+	}
+	return Bind(kvs, target)
+}
+
 func (m *ConfigManager[T]) reportError(err error) {
 	if m.onError != nil {
 		m.onError(err)
@@ -79,7 +99,7 @@ func (m *ConfigManager[T]) Start(ctx context.Context) error {
 	}
 
 	newVal := new(T)
-	if err := Bind(snap.KVs, newVal); err != nil {
+	if err := m.bind(snap.KVs, newVal); err != nil {
 		return fmt.Errorf("initial bind failed: %w", err)
 	}
 
@@ -107,7 +127,7 @@ func (m *ConfigManager[T]) watchLoop(events <-chan *Snapshot) {
 		// Defensive reload: a malformed revision is dropped instead of
 		// crashing the process with a broken configuration. The failure is
 		// reported so it never goes unnoticed.
-		if err := Bind(snap.KVs, nextVal); err != nil {
+		if err := m.bind(snap.KVs, nextVal); err != nil {
 			m.reportError(fmt.Errorf("bind revision %d: %w", snap.Revision, err))
 			continue
 		}

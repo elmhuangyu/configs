@@ -24,15 +24,30 @@ import (
 // A `key`-tagged field whose type is none of the above (for example an int or a
 // pointer) is rejected with an error rather than silently ignored, so a typo in
 // a field type cannot leave a value permanently unset.
+//
+// Bind leaves a field at its zero value when its key is missing. Use BindStrict
+// to reject missing keys instead (for example to catch a typo in a key tag).
 func Bind(kvs FlattenKVs, target any) error {
+	return bind(kvs, target, false)
+}
+
+// BindStrict is like Bind but returns an error when a key-tagged leaf field has
+// no matching key. It catches misspelled key tags (which would otherwise leave a
+// field permanently zero) at the cost of requiring every declared leaf to be
+// present.
+func BindStrict(kvs FlattenKVs, target any) error {
+	return bind(kvs, target, true)
+}
+
+func bind(kvs FlattenKVs, target any, strict bool) error {
 	v := reflect.ValueOf(target)
 	if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Struct {
 		return fmt.Errorf("target must be a pointer to a struct")
 	}
-	return bindStruct(kvs, "", v.Elem())
+	return bindStruct(kvs, "", v.Elem(), strict)
 }
 
-func bindStruct(kvs FlattenKVs, currentPrefix string, val reflect.Value) error {
+func bindStruct(kvs FlattenKVs, currentPrefix string, val reflect.Value, strict bool) error {
 	t := val.Type()
 
 	for i := 0; i < t.NumField(); i++ {
@@ -58,45 +73,51 @@ func bindStruct(kvs FlattenKVs, currentPrefix string, val reflect.Value) error {
 				return fmt.Errorf("field %s: map key must be a string, got %s", field.Name, field.Type.Key())
 			}
 			// Dynamic prefix: every entry below fullKey/ becomes a map entry.
-			if err := bindMap(kvs, fullKey, fieldVal); err != nil {
+			if err := bindMap(kvs, fullKey, fieldVal, strict); err != nil {
 				return err
 			}
 
 		case field.Type.Kind() == reflect.String:
-			if raw, ok := kvs[fullKey]; ok {
-				data, err := DecryptIfNeeded(raw)
-				if err != nil {
-					return fmt.Errorf("decrypt %s: %w", fullKey, err)
-				}
-				fieldVal.SetString(string(data))
+			raw, ok := kvs[fullKey]
+			if !ok {
+				return missingKey(strict, fullKey, field.Name)
 			}
+			data, err := DecryptIfNeeded(raw)
+			if err != nil {
+				return fmt.Errorf("decrypt %s: %w", fullKey, err)
+			}
+			fieldVal.SetString(string(data))
 
 		case field.Type.Kind() == reflect.Slice && field.Type.Elem().Kind() == reflect.Uint8:
-			if raw, ok := kvs[fullKey]; ok {
-				data, err := DecryptIfNeeded(raw)
-				if err != nil {
-					return fmt.Errorf("decrypt %s: %w", fullKey, err)
-				}
-				fieldVal.SetBytes(data)
+			raw, ok := kvs[fullKey]
+			if !ok {
+				return missingKey(strict, fullKey, field.Name)
 			}
+			data, err := DecryptIfNeeded(raw)
+			if err != nil {
+				return fmt.Errorf("decrypt %s: %w", fullKey, err)
+			}
+			fieldVal.SetBytes(data)
 
 		case field.Type.Kind() == reflect.Struct:
 			if hasKeyTags(field.Type) {
 				// Namespace prefix: descend into the sub-scope.
-				if err := bindStruct(kvs, fullKey, fieldVal); err != nil {
+				if err := bindStruct(kvs, fullKey, fieldVal, strict); err != nil {
 					return err
 				}
 				continue
 			}
 			// Structured leaf: unmarshal the exact key's payload as YAML.
-			if raw, ok := kvs[fullKey]; ok {
-				data, err := DecryptIfNeeded(raw)
-				if err != nil {
-					return fmt.Errorf("decrypt %s: %w", fullKey, err)
-				}
-				if err := yaml.Unmarshal(data, fieldVal.Addr().Interface()); err != nil {
-					return fmt.Errorf("unmarshal %s: %w", fullKey, err)
-				}
+			raw, ok := kvs[fullKey]
+			if !ok {
+				return missingKey(strict, fullKey, field.Name)
+			}
+			data, err := DecryptIfNeeded(raw)
+			if err != nil {
+				return fmt.Errorf("decrypt %s: %w", fullKey, err)
+			}
+			if err := yaml.Unmarshal(data, fieldVal.Addr().Interface()); err != nil {
+				return fmt.Errorf("unmarshal %s: %w", fullKey, err)
 			}
 
 		default:
@@ -106,7 +127,15 @@ func bindStruct(kvs FlattenKVs, currentPrefix string, val reflect.Value) error {
 	return nil
 }
 
-func bindMap(kvs FlattenKVs, prefix string, mapVal reflect.Value) error {
+// missingKey reports a missing key in strict mode and is a no-op otherwise.
+func missingKey(strict bool, fullKey, fieldName string) error {
+	if strict {
+		return fmt.Errorf("missing key %q for field %s", fullKey, fieldName)
+	}
+	return nil
+}
+
+func bindMap(kvs FlattenKVs, prefix string, mapVal reflect.Value, strict bool) error {
 	elemType := mapVal.Type().Elem()
 	if elemType.Kind() != reflect.Struct {
 		return fmt.Errorf("map %s: unsupported element type %s (only structs are supported)", prefix, elemType)
@@ -139,7 +168,7 @@ func bindMap(kvs FlattenKVs, prefix string, mapVal reflect.Value) error {
 		newElem := reflect.New(elemType).Elem()
 		subPrefix := path.Join(prefix, subKey)
 
-		if err := bindStruct(kvs, subPrefix, newElem); err != nil {
+		if err := bindStruct(kvs, subPrefix, newElem, strict); err != nil {
 			return err
 		}
 		mapVal.SetMapIndex(reflect.ValueOf(subKey), newElem)

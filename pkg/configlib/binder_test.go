@@ -140,3 +140,55 @@ func TestBindRejectsNonStringMapKey(t *testing.T) {
 	err := Bind(FlattenKVs{"items/1/prompt.txt": []byte("x")}, &c)
 	require.ErrorContains(t, err, "map key must be a string")
 }
+
+func TestBindStrictRejectsMissingKey(t *testing.T) {
+	type cfg struct {
+		Prompt string `key:"prompt.txt"`
+	}
+
+	// The key is misspelled (promt) so the field would silently stay zero.
+	var c cfg
+	require.ErrorContains(t,
+		BindStrict(FlattenKVs{"promt.txt": []byte("x")}, &c),
+		"missing key \"prompt.txt\"",
+	)
+
+	// Plain Bind tolerates it.
+	var c2 cfg
+	require.NoError(t, Bind(FlattenKVs{"promt.txt": []byte("x")}, &c2))
+	assert.Empty(t, c2.Prompt)
+}
+
+func TestBindStrictSucceedsWhenAllKeysPresent(t *testing.T) {
+	type inner struct {
+		Value string `key:"value"`
+	}
+	type cfg struct {
+		Prompt string           `key:"prompt.txt"`
+		Blob   []byte           `key:"blob"`
+		Inner  inner            `key:"inner/"`
+		Agents map[string]inner `key:"agents/"`
+	}
+
+	var c cfg
+	require.NoError(t, BindStrict(FlattenKVs{
+		"prompt.txt":     []byte("p"),
+		"blob":           []byte("b"),
+		"inner/value":    []byte("v"),
+		"agents/a/value": []byte("w"),
+	}, &c))
+
+	assert.Equal(t, "p", c.Prompt)
+	assert.Equal(t, "v", c.Inner.Value)
+	assert.Equal(t, "w", c.Agents["a"].Value)
+}
+
+func TestBindStrictEmptyMapIsAllowed(t *testing.T) {
+	type cfg struct {
+		Agents map[string]agentConfig `key:"agents/"`
+	}
+
+	var c cfg
+	require.NoError(t, BindStrict(FlattenKVs{}, &c))
+	assert.Empty(t, c.Agents)
+}

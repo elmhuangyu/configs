@@ -84,6 +84,13 @@ A `key`-tagged field of any other type (an `int`, a pointer, a non-string-keyed 
 is rejected with an error rather than silently ignored, so a mistake in a field type
 cannot leave a value permanently zero.
 
+By default a missing key leaves its field at the zero value. Enable strict mode to
+reject that instead, which catches misspelled key tags:
+
+```go
+mgr.SetStrict(true) // must be called before Start
+```
+
 ### Key Path Convention
 
 Non-structured files (`.txt` / `.pem` / `.key`) are encrypted into a sibling
