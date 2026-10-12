@@ -19,24 +19,24 @@ import (
 
 // ServiceConfig is the test service configuration model matching e2e scenarios.
 type ServiceConfig struct {
-	Agents map[string]AgentConfig `key:"agents/"`
-	Global GlobalConfig           `key:"global/"`
+	Agents map[string]AgentConfig `key:"agents/" json:"agents"`
+	Global GlobalConfig           `key:"global/" json:"global"`
 }
 
 type AgentConfig struct {
-	Manifest AgentManifest `key:"manifest.yaml"`
-	Prompt   string        `key:"prompt.txt"`
+	Manifest AgentManifest `key:"manifest.yaml" json:"manifest"`
+	Prompt   string        `key:"prompt.txt" json:"prompt"`
 }
 
 type AgentManifest struct {
-	Model       string  `yaml:"model"`
-	Temperature float64 `yaml:"temperature"`
-	APIKey      string  `yaml:"api_key"`
+	Model       string  `yaml:"model" json:"model"`
+	Temperature float64 `yaml:"temperature" json:"temperature"`
+	APIKey      string  `yaml:"api_key" json:"api_key"`
 }
 
 type GlobalConfig struct {
-	LogLevel string `key:"log_level"`
-	AppEnv   string `key:"app_env"`
+	LogLevel string `key:"log_level" json:"log_level"`
+	AppEnv   string `key:"app_env" json:"app_env"`
 }
 
 // ConfigStatus is returned by the test service's HTTP endpoint.
