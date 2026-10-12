@@ -89,10 +89,8 @@ func (m *ConfigManager[T]) Revision() int64 {
 }
 
 // Start performs the initial fetch and bind, then launches the watch loop. Once
-// Start has been called, OnChange and OnError can no longer be set.
+// Start has succeeded, OnChange, OnError, and SetStrict can no longer be called.
 func (m *ConfigManager[T]) Start(ctx context.Context) error {
-	m.started.Store(true)
-
 	snap, err := m.source.Fetch(ctx)
 	if err != nil {
 		return fmt.Errorf("initial fetch failed: %w", err)
@@ -111,6 +109,7 @@ func (m *ConfigManager[T]) Start(ctx context.Context) error {
 		return fmt.Errorf("watch failed: %w", err)
 	}
 
+	m.started.Store(true)
 	m.changeCh = make(chan change[T], 1)
 	if m.onChange != nil {
 		go m.dispatchLoop()

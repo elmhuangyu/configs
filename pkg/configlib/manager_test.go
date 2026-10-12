@@ -170,6 +170,36 @@ func TestManagerOnChangeBeforeStartDoesNotPanic(t *testing.T) {
 	assert.NotPanics(t, func() { m.OnError(func(error) {}) })
 }
 
+func TestManagerStartFailureDoesNotLockCallbacks(t *testing.T) {
+	// Source that returns an error on Fetch
+	errSrc := &failingSource{err: fmt.Errorf("network error")}
+	m := NewManager[watchConfig](errSrc)
+
+	err := m.Start(context.Background())
+	require.Error(t, err)
+
+	// Since Start failed, OnChange, OnError, and SetStrict should still be configurable
+	assert.NotPanics(t, func() { m.OnChange(func(_, _ *watchConfig) {}) })
+	assert.NotPanics(t, func() { m.OnError(func(error) {}) })
+	assert.NotPanics(t, func() { m.SetStrict(true) })
+}
+
+type failingSource struct {
+	err error
+}
+
+func (s *failingSource) Fetch(ctx context.Context) (*Snapshot, error) {
+	return nil, s.err
+}
+
+func (s *failingSource) Watch(ctx context.Context) (<-chan *Snapshot, error) {
+	return nil, s.err
+}
+
+func (s *failingSource) Close() error {
+	return nil
+}
+
 func TestManagerStrictModeReportsMissingKey(t *testing.T) {
 	src := NewMemSource(FlattenKVs{"mode": []byte("prod"), "level": []byte("info")})
 	m := NewManager[watchConfig](src)

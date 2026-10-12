@@ -58,3 +58,46 @@ jobs:
         run: |
           just tidy
           git diff --exit-code go.mod go.sum
+
+  e2e-test:
+    name: End-to-end test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      - name: Start docker compose services (etcd, sops)
+        run: |
+          docker compose up -d
+          docker compose ps
+
+      - name: Wait for etcd readiness
+        run: |
+          for i in {1..30}; do
+            if docker compose exec -T etcd etcdctl endpoint health; then
+              echo "etcd is ready"
+              break
+            fi
+            echo "Waiting for etcd to become healthy ($i/30)..."
+            sleep 1
+          done
+
+      - name: Run E2E tests
+        env:
+          ETCD_ENDPOINT: 127.0.0.1:2379
+        run: just test-e2e
+
+      - name: Tear down docker compose services
+        if: always()
+        run: docker compose down -v

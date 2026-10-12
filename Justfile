@@ -14,6 +14,10 @@ lint:
 test:
     go test -v ./...
 
+# Run E2E tests against running docker compose environment
+test-e2e:
+    E2E=1 go test -v -count=1 ./e2e
+
 # Format Go code using goimports
 fmt:
     goimports -w -local "github.com/elmhuangyu/configs" .
