@@ -14,6 +14,7 @@ type MemSource struct {
 	revision int64
 	watchers map[chan *Snapshot]struct{}
 	closed   bool
+	done     chan struct{}
 }
 
 // NewMemSource creates a MemSource seeded with kvs. The input map is copied.
@@ -22,6 +23,7 @@ func NewMemSource(kvs FlattenKVs) *MemSource {
 		kvs:      cloneKVs(kvs),
 		revision: 1,
 		watchers: make(map[chan *Snapshot]struct{}),
+		done:     make(chan struct{}),
 	}
 }
 
@@ -41,13 +43,19 @@ func (s *MemSource) Watch(ctx context.Context) (<-chan *Snapshot, error) {
 	s.mu.Unlock()
 
 	go func() {
-		<-ctx.Done()
+		// Unblock on either context cancellation or Close so the goroutine is
+		// never left parked forever.
+		select {
+		case <-ctx.Done():
+		case <-s.done:
+		}
+
 		s.mu.Lock()
+		defer s.mu.Unlock()
 		if _, ok := s.watchers[ch]; ok {
 			delete(s.watchers, ch)
 			close(ch)
 		}
-		s.mu.Unlock()
 	}()
 
 	return ch, nil
@@ -82,6 +90,7 @@ func (s *MemSource) Close() error {
 		return nil
 	}
 	s.closed = true
+	close(s.done)
 	for ch := range s.watchers {
 		delete(s.watchers, ch)
 		close(ch)

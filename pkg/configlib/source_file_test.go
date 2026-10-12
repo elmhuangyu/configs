@@ -89,7 +89,23 @@ func TestFileSourceWatchEmitsOnChange(t *testing.T) {
 	select {
 	case snap := <-events:
 		assert.Equal(t, []byte("staging"), snap.KVs["mode"])
+		assert.Equal(t, int64(2), snap.Revision, "revision must advance on change")
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for file source watch event")
 	}
+}
+
+func TestFileSourceFetchKeepsRevision(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "mode"), []byte("prod"), 0o644))
+
+	src := NewFileSource(root)
+
+	first, err := src.Fetch(context.Background())
+	require.NoError(t, err)
+	second, err := src.Fetch(context.Background())
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(1), first.Revision)
+	assert.Equal(t, first.Revision, second.Revision, "a plain fetch must not bump the revision")
 }

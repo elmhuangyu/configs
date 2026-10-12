@@ -26,7 +26,9 @@ type FileSource struct {
 // NewFileSource creates a FileSource rooted at root, polling for changes once
 // per second.
 func NewFileSource(root string) *FileSource {
-	return &FileSource{root: root, interval: time.Second}
+	s := &FileSource{root: root, interval: time.Second}
+	s.revision.Store(1)
+	return s
 }
 
 // OnError registers a callback for polling failures. Set it before Start.
@@ -40,13 +42,14 @@ func (s *FileSource) reportError(err error) {
 	}
 }
 
-// Fetch reads the whole directory tree.
+// Fetch reads the whole directory tree. Its revision reflects the last observed
+// content change (like a backend revision), not a fetch counter.
 func (s *FileSource) Fetch(_ context.Context) (*Snapshot, error) {
 	kvs, err := loadDir(s.root)
 	if err != nil {
 		return nil, err
 	}
-	return &Snapshot{KVs: kvs, Revision: s.revision.Add(1)}, nil
+	return &Snapshot{KVs: kvs, Revision: s.revision.Load()}, nil
 }
 
 // Watch polls the directory and emits a snapshot whenever its contents change.
