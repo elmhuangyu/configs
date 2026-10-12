@@ -2,7 +2,9 @@ package configlib
 
 import (
 	"context"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -101,6 +103,54 @@ func TestManagerReportsBindFailure(t *testing.T) {
 
 	// The previous config stays active.
 	assert.Equal(t, 1, m.Get().Manifest.Count)
+}
+
+func TestManagerOnChangeSerializedAndCoalesced(t *testing.T) {
+	src := NewMemSource(FlattenKVs{"mode": []byte("v0")})
+	m := NewManager[watchConfig](src)
+
+	var (
+		concurrent    atomic.Int32
+		maxConcurrent atomic.Int32
+		mu            sync.Mutex
+		delivered     []string
+	)
+
+	m.OnChange(func(_, newCfg *watchConfig) {
+		n := concurrent.Add(1)
+		for {
+			old := maxConcurrent.Load()
+			if n <= old || maxConcurrent.CompareAndSwap(old, n) {
+				break
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+		concurrent.Add(-1)
+
+		mu.Lock()
+		delivered = append(delivered, newCfg.Mode)
+		mu.Unlock()
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	require.NoError(t, m.Start(ctx))
+
+	// A burst of updates larger than the pending-slot size but small enough
+	// that the source does not drop any (MemSource drops on a full buffer).
+	for i := 1; i <= 8; i++ {
+		src.Set(FlattenKVs{"mode": []byte(fmt.Sprintf("v%d", i))})
+	}
+
+	// The final value must eventually be delivered.
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(delivered) > 0 && delivered[len(delivered)-1] == "v8"
+	}, 2*time.Second, 5*time.Millisecond)
+
+	// Callbacks must never overlap.
+	assert.EqualValues(t, 1, maxConcurrent.Load())
 }
 
 func TestManagerConcurrentReads(t *testing.T) {

@@ -289,6 +289,9 @@ secrets/
 1. **Lock-free hot reload**: `ConfigManager[T]` holds an immutable config value behind
    an `atomic.Pointer[T]`. `Get()` is a single atomic load (nanoseconds), while a
    background goroutine rebuilds and swaps the value after each watch event.
+   `OnChange` callbacks are delivered serially on a dedicated goroutine and
+   coalesced, so a burst of updates cannot reorder callbacks or spawn a goroutine
+   per event.
 2. **Defensive reload**: a revision that fails to bind is dropped and the previous
    config is retained, so a broken config can never crash the process.
 3. **Watch never goes silently stale**: the etcd driver re-establishes the watch

@@ -15,6 +15,7 @@ type ConfigManager[T any] struct {
 	revision atomic.Int64
 	onChange func(oldCfg, newCfg *T)
 	onError  func(error)
+	changeCh chan change[T]
 }
 
 // NewManager creates a manager bound to source. Call Start to load the initial
@@ -23,8 +24,10 @@ func NewManager[T any](source Source) *ConfigManager[T] {
 	return &ConfigManager[T]{source: source}
 }
 
-// OnChange registers a callback invoked after a successful reload. The callback
-// runs on its own goroutine and must be set before Start.
+// OnChange registers a callback invoked after a successful reload. Callbacks run
+// serially on a dedicated goroutine, in order, and are never executed
+// concurrently; a burst of updates is coalesced so only the latest pending
+// change is delivered. It must be set before Start.
 func (m *ConfigManager[T]) OnChange(fn func(oldCfg, newCfg *T)) {
 	m.onChange = fn
 }
@@ -73,11 +76,17 @@ func (m *ConfigManager[T]) Start(ctx context.Context) error {
 		return fmt.Errorf("watch failed: %w", err)
 	}
 
+	m.changeCh = make(chan change[T], 1)
+	if m.onChange != nil {
+		go m.dispatchLoop()
+	}
 	go m.watchLoop(events)
 	return nil
 }
 
 func (m *ConfigManager[T]) watchLoop(events <-chan *Snapshot) {
+	defer close(m.changeCh)
+
 	for snap := range events {
 		nextVal := new(T)
 		// Defensive reload: a malformed revision is dropped instead of
@@ -90,9 +99,44 @@ func (m *ConfigManager[T]) watchLoop(events <-chan *Snapshot) {
 
 		oldVal := m.ptr.Swap(nextVal)
 		m.revision.Store(snap.Revision)
+		m.publish(oldVal, nextVal)
+	}
+}
 
-		if m.onChange != nil {
-			go m.onChange(oldVal, nextVal)
+// change is a config transition handed to the serial dispatcher.
+type change[T any] struct {
+	old *T
+	new *T
+}
+
+// publish queues a change for OnChange. At most one change is pending, so a
+// burst of updates collapses into the latest and no goroutine is spawned per
+// event.
+func (m *ConfigManager[T]) publish(oldVal, newVal *T) {
+	if m.onChange == nil {
+		return
+	}
+
+	c := change[T]{old: oldVal, new: newVal}
+	for {
+		select {
+		case m.changeCh <- c:
+			return
+		default:
 		}
+
+		// The pending slot is full: drop the stale change and retry with the
+		// newest one.
+		select {
+		case <-m.changeCh:
+		default:
+		}
+	}
+}
+
+// dispatchLoop delivers changes to OnChange one at a time, preserving order.
+func (m *ConfigManager[T]) dispatchLoop() {
+	for c := range m.changeCh {
+		m.onChange(c.old, c.new)
 	}
 }
