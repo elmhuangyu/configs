@@ -1,5 +1,7 @@
 # configs
 
+[![CI](https://github.com/elmhuangyu/configs/actions/workflows/ci.yml/badge.svg)](https://github.com/elmhuangyu/configs/actions/workflows/ci.yml)
+
 A dynamic configuration system built on **etcd v3**, **SOPS**, and **Go reflection**.
 
 The project abandons traditional POSIX file/directory semantics in favor of a single
@@ -348,6 +350,11 @@ just lint    # golangci-lint
 just test    # go test ./...
 just build   # build all binaries
 ```
+
+CI (`.github/workflows/ci.yml`) runs lint, build, `go test -race`, a
+formatting check and a `go mod tidy` check on every push to `main` and every pull
+request. Dependabot (`.github/dependabot.yml`) keeps the Go modules and the
+workflow actions up to date weekly.
 
 Test coverage:
 
