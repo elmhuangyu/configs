@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GOLANGCI_LINT_VERSION: 2.13.1
+  GOLANGCI_LINT_VERSION: latest
 
 jobs:
   test:
@@ -30,15 +30,18 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install just and golangci-lint
+      - name: Install just
         uses: taiki-e/install-action@v2
         with:
-          tool: just,golangci-lint@${{ env.GOLANGCI_LINT_VERSION }}
+          tool: just
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPATH)/bin ${{ env.GOLANGCI_LINT_VERSION }}
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Install goimports
-        run: |
-          go install golang.org/x/tools/cmd/goimports@latest
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+        run: go install golang.org/x/tools/cmd/goimports@latest
 
       - name: Lint
         run: just lint
