@@ -30,11 +30,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install just
-        uses: taiki-e/install-action@v2
-        with:
-          tool: just
-
       - name: Install golangci-lint
         run: |
           curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPATH)/bin ${{ env.GOLANGCI_LINT_VERSION }}
@@ -44,22 +39,22 @@ jobs:
         run: go install golang.org/x/tools/cmd/goimports@latest
 
       - name: Lint
-        run: just lint
+        run: golangci-lint run ./...
 
       - name: Build
-        run: just build
+        run: go build -o bin/ ./...
 
       - name: Test (with race detector)
         run: go test -race -count=1 ./...
 
       - name: Check formatting
         run: |
-          just fmt
+          goimports -w -local "github.com/elmhuangyu/configs" .
           git diff --exit-code
 
       - name: Check go.mod is tidy
         run: |
-          just tidy
+          go mod tidy
           git diff --exit-code go.mod go.sum
 
   e2e-test:
@@ -75,10 +70,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install just
-        uses: taiki-e/install-action@v2
-        with:
-          tool: just
 
       - name: Start docker compose services (etcd)
         run: |
@@ -100,7 +91,8 @@ jobs:
       - name: Run E2E tests
         env:
           ETCD_ENDPOINT: 127.0.0.1:2379
-        run: just test-e2e
+          E2E: "1"
+        run: go test -v -count=1 ./e2e
 
       - name: Tear down docker compose services
         if: always()
