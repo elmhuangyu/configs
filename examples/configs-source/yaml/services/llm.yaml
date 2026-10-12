@@ -1,0 +1,4 @@
+model: gpt-4o
+temperature: 0.7
+api_key: sk-proj-super-secret-api-key-1234567890
+timeout_seconds: 30

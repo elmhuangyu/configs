@@ -16,6 +16,6 @@ The example declares a nested `AppConfig` struct:
 2. If encrypted files are used, ensure `SOPS_AGE_KEY` or KMS credentials are exported in your environment.
 3. Run the application:
    ```bash
-   go run ./examples/basic
+   go run ./examples/app
    ```
 4. Update configuration in etcd via `cfgctl push` and observe the live hot reload callback firing.

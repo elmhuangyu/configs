@@ -1,0 +1,7 @@
+{
+  "host": "postgres.internal",
+  "port": 5432,
+  "username": "app_user",
+  "password": "super-secret-postgres-password",
+  "max_connections": 50
+}
