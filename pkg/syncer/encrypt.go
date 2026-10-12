@@ -108,7 +108,12 @@ func EncryptDirectory(opts EncryptOptions) (EncryptReport, error) {
 				report.Skipped = append(report.Skipped, rel)
 				return nil
 			}
-			if _, err := runSops(encryptArgs(opts.Keys, []string{"--in-place"}, full)); err != nil {
+			absPath, err := filepath.Abs(full)
+			if err != nil {
+				return err
+			}
+			fileDir := filepath.Dir(absPath)
+			if _, err := runSops(fileDir, encryptArgs(opts.Keys, []string{"--in-place"}, absPath)); err != nil {
 				return err
 			}
 			report.Encrypted = append(report.Encrypted, rel)
@@ -119,7 +124,12 @@ func EncryptDirectory(opts EncryptOptions) (EncryptReport, error) {
 				report.StrayPlaintext = append(report.StrayPlaintext, rel)
 				return nil
 			}
-			out, err := runSops(encryptArgs(opts.Keys, []string{"--input-type", "binary", "--output-type", "json"}, full))
+			absPath, err := filepath.Abs(full)
+			if err != nil {
+				return err
+			}
+			fileDir := filepath.Dir(absPath)
+			out, err := runSops(fileDir, encryptArgs(opts.Keys, []string{"--input-type", "binary", "--output-type", "json"}, absPath))
 			if err != nil {
 				return err
 			}
@@ -143,10 +153,11 @@ func encryptArgs(keys KeyOptions, modeFlags []string, file string) []string {
 	return append(args, file)
 }
 
-// runSops executes the sops binary and returns its stdout. Failures include
+// runSops executes the sops binary in dir and returns its stdout. Failures include
 // sops' stderr for actionable diagnostics.
-func runSops(args []string) ([]byte, error) {
+func runSops(dir string, args []string) ([]byte, error) {
 	cmd := exec.Command("sops", args...)
+	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 

@@ -1,19 +1,19 @@
 {
-	"host": "ENC[AES256_GCM,data:ccfIpy3aT5F8QgEcz2YG8iU=,iv:HYLLqNwbJ0o3KTI2+Qo5akA+E554ow+o7Tvtdf+8izs=,tag:9rVmqXHkOxiXWg14k0gyXA==,type:str]",
-	"port": "ENC[AES256_GCM,data:eXbAbQ==,iv:/CfEGLRU/a7ksovl3KudHH0P3MhbcIJwmXwQSYwHiog=,tag:nt6GkgrpmJ8kYavvUkS8RA==,type:int]",
-	"username": "ENC[AES256_GCM,data:i6Qb3LOmCGs=,iv:yiIgO7ykv/EK9ASCPfZR+NbUZg6jydLOlOTiO6ncN/k=,tag:fp29BuI08GXNqkPy51CXAQ==,type:str]",
-	"password": "ENC[AES256_GCM,data:a8WAYuQDHgZwbiVmMS5QGpClgXJaNoKef/PREf56,iv:QwZSS21eVzlV2U0edH3G8m5h+iqhlKV5qQR8x8v5mMw=,tag:kgGBfcpGcPZ4Sk18ZrI4AA==,type:str]",
-	"max_connections": "ENC[AES256_GCM,data:los=,iv:DAeqiWoq/880UVHb/VR3Z9Iz7LUSsvg21EchasCEdPw=,tag:1BUq4L94mutFVJ3Jj83CMQ==,type:int]",
+	"host": "postgres.internal",
+	"port": 5432,
+	"username": "app_user",
+	"password": "ENC[AES256_GCM,data:Z13kdnYy420bsaZyQppNbq7LhIU6Ohzj0hDQ+R7v,iv:KL1UNJo0cSJWnoZbbm9Wu7w4zpdS0WGQNQdToaBYoew=,tag:cRJzeqsiMnY1unt5k8XJSA==,type:str]",
+	"max_connections": 50,
 	"sops": {
 		"age": [
 			{
-				"enc": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSByQzJjWmlzamE5NHgzUWdP\nK3V3OXZBekxwNVlvekM4UmhBNHZaOUkyRzJZCjZoQnAwVDJHckI3RlRNUWdpaVhV\nM3QvSm5EZU1lVitjWGFLWEFoRnB4dDQKLS0tIHpwdGFpMjEzamVNTVM3Tzc5Sklh\nYnc0dFpyUkxmRWJRbW5Fc3l6RDR4d1kKmuGdsBOoQ5vDtJkJ2DBw1cPVf/j1Uym2\nlYtvVXc8ASDqt+VVQNVnLLQeV7FJLqpr83yu9ZoOg0SikQYjpsMZXg==\n-----END AGE ENCRYPTED FILE-----\n",
+				"enc": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBJMHEvRWs1VUszdXVvcklZ\nNFV6RG4rS3hPUzZqbDg3S3BFWEdDblNUTVc0CitWNTF5c2ROT09FQjh2MzhMZEda\na002ck1PcmpVc0dvQzdaN1hBNzRzRUUKLS0tIDhDMW95V2kweVNQWFpTVWZBNEsw\nU2FSMU03ZDJSNjdGcjFsc3AraUg4ZDQKesTqp6dTcXObSNbzTy5LM/w8ZHdjNRKa\nsBDFpgaB5bTZzpRwoZjdeyabrhs5cZ7sf6gT1efDC/0ZdY05Tm6pLQ==\n-----END AGE ENCRYPTED FILE-----\n",
 				"recipient": "age1lzd99uklcjnc0e7d860axevet2cz99ce9pq6tzuzd05l5nr28ams36nvun"
 			}
 		],
-		"lastmodified": "2026-10-12T14:55:09Z",
-		"mac": "ENC[AES256_GCM,data:rGH5rnPfsVxJhOvIWyn27iUelZAbBbcVRSKVhUGdGO3ivzinu+ZnGTgfL9argXQWLVk+WAMnnQr+U7+6tZg5gFZ/GbrJPwaINWRKlon2SXHQRzR5PBU6Ag0lWHSq1UYfXxKG1XzAZYDGhXBBLnVP/qwACG/G1aCQXmh8RWUX5pc=,iv:eUD6Li+26HlZtOs4XoxjLxDHOkjXI+7HM/gXpHSTjBg=,tag:x+iDa9tN3QdqJMFRiBoLgg==,type:str]",
-		"unencrypted_suffix": "_unencrypted",
+		"encrypted_regex": "^(password|api_key)$",
+		"lastmodified": "2026-10-12T15:00:48Z",
+		"mac": "ENC[AES256_GCM,data:5eqQhImeQhkf/TkcV5infcM/evdxC58G3q2c5iVhXoFtb5GVbev0DEqk+ki+LDZWWmu/0Ek+o7cqMbf6vnEJt4gSbB3XrpTV8+ogZzaUNYuO4yIvNjuOM2JMb6SbFEFZi/AjNSKj0WqRYqfFanx71l3Rh90GY3Cifiq9uP2jloY=,iv:gROIEy1k0usmRpIV1Aa3fjfFK9CBSkE42CXmKMlWqLg=,tag:d4RbOXtQxNh2oOcgLb+mrg==,type:str]",
 		"version": "3.13.3"
 	}
 }

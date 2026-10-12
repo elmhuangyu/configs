@@ -18,13 +18,15 @@ examples/
 │   │   └── database/config.json
 │   └── yaml/                   # Structured YAML configs (.yaml, .yml)
 │       └── services/llm.yaml
+├── .sops.yaml                  # SOPS rules for field-level encryption (encrypted_regex)
 ├── configs-encrypted/          # Compiled & encrypted configs (SOPS envelopes)
+│   ├── .sops.yaml              # Copied for SOPS metadata & integrity
 │   ├── raw/
 │   │   └── agents/coder/prompt.txt.sops.json  # Raw binary envelope
 │   ├── json/
-│   │   └── database/config.json               # Structured JSON with encrypted fields
+│   │   └── database/config.json               # Structured JSON with only secrets encrypted
 │   └── yaml/
-│       └── services/llm.yaml                  # Structured YAML with encrypted fields
+│       └── services/llm.yaml                  # Structured YAML with only secrets encrypted
 ├── encrypted_test.go           # Automated tests verifying decryption of encrypted configs
 └── README.md
 ```
@@ -67,28 +69,35 @@ The examples and tests use a fixed public/private test age key pair:
 
 ### 3.2 Structured JSON (`examples/configs-source/json`)
 - **Source**: `database/config.json`
-- **Encryption**: In-place field encryption into valid JSON containing a top-level `"sops"` metadata block:
+- **Field-Level Encryption**: Using `encrypted_regex: "^(password|api_key)$"`, only `password` is encrypted while metadata like `host`, `port`, and `max_connections` stay plain and readable:
   ```json
   {
-    "host": "ENC[AES256_GCM,...]",
+    "host": "postgres.internal",
+    "port": 5432,
+    "username": "app_user",
     "password": "ENC[AES256_GCM,...]",
+    "max_connections": 50,
     "sops": { ... }
   }
   ```
 - **Runtime Key**: Bound into struct via `yaml:"..."` tags:
   ```go
   type DBConfig struct {
-      Host     string `yaml:"host"`
-      Password string `yaml:"password"`
+      Host           string `yaml:"host"`
+      Port           int    `yaml:"port"`
+      Password       string `yaml:"password"`
+      MaxConnections int    `yaml:"max_connections"`
   } `key:"config.json"`
   ```
 
 ### 3.3 Structured YAML (`examples/configs-source/yaml`)
 - **Source**: `services/llm.yaml`
-- **Encryption**: In-place field encryption into valid YAML containing a top-level `sops:` block:
+- **Field-Level Encryption**: Using `encrypted_regex: "^(password|api_key)$"`, only `api_key` is encrypted while `model`, `temperature`, and `timeout_seconds` remain plaintext:
   ```yaml
-  model: ENC[AES256_GCM,...]
+  model: gpt-4o
+  temperature: 0.7
   api_key: ENC[AES256_GCM,...]
+  timeout_seconds: 30
   sops:
     age: ...
   ```

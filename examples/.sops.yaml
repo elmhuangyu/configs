@@ -1,0 +1,9 @@
+creation_rules:
+  # Structured YAML and JSON configs: only encrypt sensitive secret fields (e.g. password, api_key)
+  - path_regex: .*\.(yaml|yml|json)$
+    encrypted_regex: "^(password|api_key)$"
+    age: "age1lzd99uklcjnc0e7d860axevet2cz99ce9pq6tzuzd05l5nr28ams36nvun"
+
+  # Raw / scalar configs (.txt, .pem, .key)
+  - path_regex: .*\.(txt|pem|key)$
+    age: "age1lzd99uklcjnc0e7d860axevet2cz99ce9pq6tzuzd05l5nr28ams36nvun"

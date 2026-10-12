@@ -35,11 +35,12 @@ update-deps:
 EXAMPLE_AGE_RECIPIENT := "age1lzd99uklcjnc0e7d860axevet2cz99ce9pq6tzuzd05l5nr28ams36nvun"
 EXAMPLE_AGE_IDENTITY  := "AGE-SECRET-KEY-1G0Q5K9TV4REQ3ZSQRMTMG8NSWQGYT0T7TZ33RAZEE0GZYVZN0APSU24RK7"
 
-# Compile and encrypt example configs into encrypted/SOPS format
+# Compile and encrypt example configs into encrypted/SOPS format using .sops.yaml rules
 example-encrypt: build
     rm -rf examples/configs-encrypted
     cp -r examples/configs-source examples/configs-encrypted
-    ./bin/cfgctl encrypt examples/configs-encrypted --age {{EXAMPLE_AGE_RECIPIENT}}
+    cp examples/.sops.yaml examples/configs-encrypted/.sops.yaml
+    ./bin/cfgctl encrypt examples/configs-encrypted
     ./scripts/prune-plaintext.sh examples/configs-encrypted
 
 # Push encrypted example configs to etcd
