@@ -46,9 +46,7 @@ example-encrypt: build
 
 # Push encrypted example configs to etcd
 example-push prefix="/myapp/config" endpoints="127.0.0.1:2379": build
-    ./bin/cfgctl push examples/configs-encrypted/raw --prefix {{prefix}} --endpoints {{endpoints}}
-    ./bin/cfgctl push examples/configs-encrypted/json --prefix {{prefix}} --endpoints {{endpoints}}
-    ./bin/cfgctl push examples/configs-encrypted/yaml --prefix {{prefix}} --endpoints {{endpoints}}
+    ./bin/cfgctl push examples/configs-encrypted --prefix {{prefix}} --endpoints {{endpoints}}
 
 # Clean build artifacts
 clean:
