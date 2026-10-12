@@ -5,7 +5,7 @@ import (
 )
 
 // The mapping between on-disk paths and logical keys (including the stripping
-// of the ".sops.json" envelope suffix) lives in pkg/keypath, shared with the
+// of the ".sops.json" envelope suffix) lives in pkg/cfgfs, shared with the
 // publishing CLI so both sides agree on a single convention.
 
 // FlattenKVs is a flat dictionary of configuration entries. Keys are paths

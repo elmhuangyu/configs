@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/elmhuangyu/configs/pkg/keypath"
+	"github.com/elmhuangyu/configs/pkg/cfgfs"
 	"github.com/elmhuangyu/configs/pkg/sopsenv"
 )
 
@@ -77,7 +77,7 @@ type EncryptReport struct {
 }
 
 // EncryptDirectory walks opts.Dir and encrypts every supported file using the
-// `sops` binary. Ignore rules apply (see IgnoreFileName and the built-in
+// `sops` binary. Ignore rules apply (see cfgfs.IgnoreFileName and the built-in
 // excludes), so VCS metadata and .sops.yaml are never encrypted in place.
 //
 //   - Structured files (.yaml, .yml, .json) are encrypted in place with the
@@ -93,8 +93,8 @@ type EncryptReport struct {
 func EncryptDirectory(opts EncryptOptions) (EncryptReport, error) {
 	var report EncryptReport
 
-	err := walkConfigFiles(opts.Dir, func(rel, full string) error {
-		if strings.HasSuffix(full, keypath.SOPSRawSuffix) {
+	err := cfgfs.Walk(opts.Dir, func(rel, full string) error {
+		if strings.HasSuffix(full, cfgfs.SOPSRawSuffix) {
 			return nil
 		}
 
@@ -115,7 +115,7 @@ func EncryptDirectory(opts EncryptOptions) (EncryptReport, error) {
 			return nil
 
 		case ".txt", ".pem", ".key":
-			if _, statErr := os.Stat(full + keypath.SOPSRawSuffix); statErr == nil {
+			if _, statErr := os.Stat(full + cfgfs.SOPSRawSuffix); statErr == nil {
 				report.StrayPlaintext = append(report.StrayPlaintext, rel)
 				return nil
 			}
@@ -123,7 +123,7 @@ func EncryptDirectory(opts EncryptOptions) (EncryptReport, error) {
 			if err != nil {
 				return err
 			}
-			if err := os.WriteFile(full+keypath.SOPSRawSuffix, out, 0o644); err != nil {
+			if err := os.WriteFile(full+cfgfs.SOPSRawSuffix, out, 0o644); err != nil {
 				return err
 			}
 			report.Encrypted = append(report.Encrypted, rel)

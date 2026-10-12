@@ -53,13 +53,13 @@ model that delivers lock-free reads and transaction-level atomic hot reloads.
 │   │   ├── source_etcd.go    # etcd v3 driver
 │   │   ├── source_file.go    # local directory driver (local debug fallback)
 │   │   └── source_mem.go     # in-memory driver (unit-test mock)
-│   ├── keypath/              # path <-> logical key convention (no heavy deps)
-│   │   └── keypath.go
+│   ├── cfgfs/                # local-dir conventions: path<->key, ignore, walk
+│   │   ├── path.go
+│   │   └── ignore.go
 │   ├── sopsenv/              # structural SOPS envelope detection (shared)
 │   │   └── sopsenv.go
 │   └── syncer/               # shared sync/encryption core used by the CLI
 │       ├── encrypt.go
-│       ├── ignore.go         # .cfgctlignore handling + built-in excludes
 │       └── push.go
 ├── scripts/
 │   └── prune-plaintext.sh    # delete plaintext files that have an envelope
@@ -323,9 +323,10 @@ re-include a specific file.
    The detection lives in `pkg/sopsenv`, shared by the library and the CLI.
 5. **Encryption decoupled from logical paths**: `.sops.json` is only a disk
    representation, stripped to a logical path on both push and read, keeping
-   encryption fully hidden from business structs. The path<->logical-key convention
-   lives in `pkg/keypath`, shared by `configlib` (consumer) and `syncer` (CLI) while
-   keeping the decryption stack out of the CLI binary.
+   encryption fully hidden from business structs. The local-directory conventions
+   (path<->logical-key mapping, ignore rules and the walk) live in `pkg/cfgfs`,
+   shared by `configlib` (consumer) and `syncer` (CLI), so every driver — etcd,
+   file and push — observes the same set of keys.
 
 ---
 

@@ -9,7 +9,7 @@ import (
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 
-	"github.com/elmhuangyu/configs/pkg/keypath"
+	"github.com/elmhuangyu/configs/pkg/cfgfs"
 )
 
 // maxTxnBytes bounds the size of a single push transaction. etcd's default
@@ -151,14 +151,14 @@ func checkTxnSize(total int) error {
 }
 
 // CollectLocalFiles flattens dir into logical keys. Ignore rules apply (see
-// IgnoreFileName and the built-in excludes). Plain files shadowed by an
+// cfgfs.IgnoreFileName and the built-in excludes). Plain files shadowed by an
 // encrypted raw envelope ("<name>.sops.json") are skipped, and the envelope is
 // exposed under the original logical path.
 func CollectLocalFiles(dir string) (map[string][]byte, error) {
 	files := make(map[string][]byte)
 
-	err := walkConfigFiles(dir, func(rel, full string) error {
-		if _, statErr := os.Stat(full + keypath.SOPSRawSuffix); statErr == nil {
+	err := cfgfs.Walk(dir, func(rel, full string) error {
+		if _, statErr := os.Stat(full + cfgfs.SOPSRawSuffix); statErr == nil {
 			return nil
 		}
 
@@ -166,7 +166,7 @@ func CollectLocalFiles(dir string) (map[string][]byte, error) {
 		if err != nil {
 			return err
 		}
-		files[keypath.LogicalKey(rel)] = data
+		files[cfgfs.LogicalKey(rel)] = data
 		return nil
 	})
 	if err != nil {

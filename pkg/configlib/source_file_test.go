@@ -38,6 +38,25 @@ func TestFileSourcePrefersEncryptedEnvelope(t *testing.T) {
 	assert.Equal(t, []byte(`{"sops":{}}`), snap.KVs["prompt.txt"])
 }
 
+func TestFileSourceHonorsIgnore(t *testing.T) {
+	root := t.TempDir()
+
+	// Built-in excludes and .cfgctlignore must apply, exactly as `cfgctl push`
+	// would see the directory.
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".git", "config"), []byte("gitcfg"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".sops.yaml"), []byte("creation_rules: []\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".cfgctlignore"), []byte("ignored.yaml\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "ignored.yaml"), []byte("x"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "app.yaml"), []byte("a: b\n"), 0o644))
+
+	src := NewFileSource(root)
+	snap, err := src.Fetch(context.Background())
+	require.NoError(t, err)
+
+	assert.Equal(t, FlattenKVs{"app.yaml": []byte("a: b\n")}, snap.KVs)
+}
+
 func TestFileSourceReportsPollError(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "a"), []byte("1"), 0o644))

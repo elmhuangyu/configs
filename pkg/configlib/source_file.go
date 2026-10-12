@@ -4,18 +4,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"sync/atomic"
 	"time"
 
-	"github.com/elmhuangyu/configs/pkg/keypath"
+	"github.com/elmhuangyu/configs/pkg/cfgfs"
 )
 
 // FileSource serves configuration from a local directory tree. It is a
 // development fallback so applications can run without an etcd cluster, and it
-// mirrors the same key convention as `cfgctl push` (see pkg/keypath).
+// mirrors the same key convention as `cfgctl push` (see pkg/cfgfs).
 type FileSource struct {
 	root     string
 	interval time.Duration
@@ -99,32 +97,24 @@ func (s *FileSource) Watch(ctx context.Context) (<-chan *Snapshot, error) {
 // Close is a no-op; the directory holds no resources.
 func (s *FileSource) Close() error { return nil }
 
-// loadDir flattens a directory tree into logical keys. Plain files shadowed by
-// an encrypted raw envelope (`<name>.sops.json`) are skipped so the encrypted
-// payload wins.
+// loadDir flattens a directory tree into logical keys. It applies the same
+// ignore rules as `cfgctl push` (built-in excludes plus .cfgctlignore), so the
+// file driver observes exactly the keys the CLI would publish. Plain files
+// shadowed by an encrypted raw envelope (`<name>.sops.json`) are skipped so the
+// encrypted payload wins.
 func loadDir(root string) (FlattenKVs, error) {
 	kvs := make(FlattenKVs)
 
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if _, statErr := os.Stat(p + keypath.SOPSRawSuffix); statErr == nil {
+	err := cfgfs.Walk(root, func(rel, full string) error {
+		if _, statErr := os.Stat(full + cfgfs.SOPSRawSuffix); statErr == nil {
 			return nil
 		}
 
-		rel, err := filepath.Rel(root, p)
+		data, err := os.ReadFile(full)
 		if err != nil {
 			return err
 		}
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		kvs[keypath.LogicalKey(filepath.ToSlash(rel))] = data
+		kvs[cfgfs.LogicalKey(rel)] = data
 		return nil
 	})
 	if err != nil {

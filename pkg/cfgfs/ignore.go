@@ -1,4 +1,4 @@
-package syncer
+package cfgfs
 
 import (
 	"bufio"
@@ -11,19 +11,23 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 )
 
-// IgnoreFileName is the optional gitignore-style file honoured by both
-// `cfgctl encrypt` and `cfgctl push`. It lives at the root of the processed
-// directory and its patterns are matched against paths relative to that root.
+// IgnoreFileName is the optional gitignore-style file honoured by the Walk
+// helper. It lives at the root of the processed directory and its patterns are
+// matched against paths relative to that root.
 const IgnoreFileName = ".cfgctlignore"
 
 // commentPrefix marks a comment line in an ignore file, matching git.
 const commentPrefix = "#"
 
-// isBuiltinExcluded reports whether rel (slash separated, relative to the walk
+// WalkFunc is invoked for every non-ignored regular file found by Walk. rel is
+// the slash-separated path relative to root; full is the path to open.
+type WalkFunc func(rel, full string) error
+
+// IsBuiltinExcluded reports whether rel (slash separated, relative to the walk
 // root) is covered by a built-in exclude: VCS metadata and SOPS' own
-// configuration, which must never be pushed as configuration nor re-encrypted
+// configuration, which must never be treated as configuration nor re-encrypted
 // in place.
-func isBuiltinExcluded(rel string) bool {
+func IsBuiltinExcluded(rel string) bool {
 	if rel == "" || rel == "." {
 		return false
 	}
@@ -39,16 +43,16 @@ func isBuiltinExcluded(rel string) bool {
 	return false
 }
 
-// ignoreMatcher combines the built-in excludes with the patterns of a
-// .cfgctlignore file.
-type ignoreMatcher struct {
+// Matcher combines the built-in excludes with the patterns of a .cfgctlignore
+// file.
+type Matcher struct {
 	patterns gitignore.Matcher
 }
 
-// loadIgnore reads <root>/.cfgctlignore if present. A missing file is not an
+// LoadIgnore reads <root>/.cfgctlignore if present. A missing file is not an
 // error; the built-in excludes still apply. Comment and blank lines are
 // skipped, as in git.
-func loadIgnore(root string) (*ignoreMatcher, error) {
+func LoadIgnore(root string) (*Matcher, error) {
 	lines, err := readIgnoreLines(filepath.Join(root, IgnoreFileName))
 	if err != nil {
 		return nil, err
@@ -58,12 +62,12 @@ func loadIgnore(root string) (*ignoreMatcher, error) {
 	for _, line := range lines {
 		patterns = append(patterns, gitignore.ParsePattern(line, nil))
 	}
-	return &ignoreMatcher{patterns: gitignore.NewMatcher(patterns)}, nil
+	return &Matcher{patterns: gitignore.NewMatcher(patterns)}, nil
 }
 
-// matches reports whether rel is excluded from processing.
-func (m *ignoreMatcher) matches(rel string, isDir bool) bool {
-	if isBuiltinExcluded(rel) {
+// Matches reports whether rel is excluded from processing.
+func (m *Matcher) Matches(rel string, isDir bool) bool {
+	if IsBuiltinExcluded(rel) {
 		return true
 	}
 	return m.patterns.Match(strings.Split(rel, "/"), isDir)
@@ -93,11 +97,10 @@ func readIgnoreLines(name string) ([]string, error) {
 	return lines, sc.Err()
 }
 
-// walkConfigFiles walks root, applying the ignore rules, and invokes fn for
-// every non-ignored regular file. fn receives the slash-separated path relative
-// to root and the full path. Ignored directories are pruned.
-func walkConfigFiles(root string, fn func(rel, full string) error) error {
-	ign, err := loadIgnore(root)
+// Walk walks root, applying the ignore rules, and invokes fn for every
+// non-ignored regular file. Ignored directories are pruned.
+func Walk(root string, fn WalkFunc) error {
+	ign, err := LoadIgnore(root)
 	if err != nil {
 		return err
 	}
@@ -114,12 +117,12 @@ func walkConfigFiles(root string, fn func(rel, full string) error) error {
 		rel = filepath.ToSlash(rel)
 
 		if d.IsDir() {
-			if rel != "." && ign.matches(rel, true) {
+			if rel != "." && ign.Matches(rel, true) {
 				return fs.SkipDir
 			}
 			return nil
 		}
-		if ign.matches(rel, false) {
+		if ign.Matches(rel, false) {
 			return nil
 		}
 		return fn(rel, p)

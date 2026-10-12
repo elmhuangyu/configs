@@ -1,10 +1,12 @@
-// Package keypath defines the mapping between filesystem-relative paths and the
-// logical key names used in the configuration tree.
+// Package cfgfs maps a local configuration directory to the flat logical keys
+// used by the consumer library. It defines the path <-> key convention and the
+// ignore rules (built-in excludes plus an optional .cfgctlignore file), and
+// provides a Walk helper that applies them.
 //
-// It intentionally carries no third-party dependencies so both the consumer
-// library (configlib) and the publishing CLI (syncer) can share the exact same
-// convention without the CLI linking the decryption stack.
-package keypath
+// Both the consumer library (configlib) and the publishing CLI (syncer) use
+// this package so the local-directory view is identical everywhere: the etcd
+// driver, the file driver and `cfgctl push` all observe the same set of keys.
+package cfgfs
 
 import "strings"
 
