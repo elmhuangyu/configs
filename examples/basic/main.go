@@ -98,8 +98,16 @@ func printConfig(title string, cfg *AppConfig) {
 	fmt.Printf("Global.LogLevel: %s\n", cfg.Global.LogLevel)
 	fmt.Printf("Global.AppEnv: %s\n", cfg.Global.AppEnv)
 	for name, agent := range cfg.Agents {
+		maskedKey := maskSecret(agent.Manifest.APIKey)
 		fmt.Printf("Agent [%s]: model=%s, temp=%.2f, api_key=%s, prompt=%s\n",
-			name, agent.Manifest.Model, agent.Manifest.Temperature, agent.Manifest.APIKey, agent.Prompt)
+			name, agent.Manifest.Model, agent.Manifest.Temperature, maskedKey, agent.Prompt)
 	}
 	fmt.Println("--------------------")
+}
+
+func maskSecret(s string) string {
+	if len(s) <= 4 {
+		return "****"
+	}
+	return s[:2] + "****" + s[len(s)-2:]
 }

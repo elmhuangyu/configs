@@ -184,22 +184,6 @@ func TestManagerStartFailureDoesNotLockCallbacks(t *testing.T) {
 	assert.NotPanics(t, func() { m.SetStrict(true) })
 }
 
-type failingSource struct {
-	err error
-}
-
-func (s *failingSource) Fetch(ctx context.Context) (*Snapshot, error) {
-	return nil, s.err
-}
-
-func (s *failingSource) Watch(ctx context.Context) (<-chan *Snapshot, error) {
-	return nil, s.err
-}
-
-func (s *failingSource) Close() error {
-	return nil
-}
-
 func TestManagerStrictModeReportsMissingKey(t *testing.T) {
 	src := NewMemSource(FlattenKVs{"mode": []byte("prod"), "level": []byte("info")})
 	m := NewManager[watchConfig](src)
@@ -253,4 +237,20 @@ func TestManagerConcurrentReads(t *testing.T) {
 
 	src.Set(FlattenKVs{"mode": []byte("staging")})
 	wg.Wait()
+}
+
+type failingSource struct {
+	err error
+}
+
+func (s *failingSource) Fetch(ctx context.Context) (*Snapshot, error) {
+	return nil, s.err
+}
+
+func (s *failingSource) Watch(ctx context.Context) (<-chan *Snapshot, error) {
+	return nil, s.err
+}
+
+func (s *failingSource) Close() error {
+	return nil
 }

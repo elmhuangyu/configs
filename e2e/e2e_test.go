@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -25,11 +27,11 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
+// A stable age key pair strictly for local and E2E tests, taken from the SOPS test suite.
+// WARNING: Strictly for testing purposes only. Never use or reuse in production.
 const (
 	testAgeRecipient = "age1lzd99uklcjnc0e7d860axevet2cz99ce9pq6tzuzd05l5nr28ams36nvun"
 	testAgeIdentity  = "AGE-SECRET-KEY-1G0Q5K9TV4REQ3ZSQRMTMG8NSWQGYT0T7TZ33RAZEE0GZYVZN0APSU24RK7"
-	defaultPrefix    = "/e2e/config"
-	httpPort         = "18080"
 )
 
 type ConfigStatusResponse struct {
@@ -49,6 +51,17 @@ type ConfigStatusResponse struct {
 			AppEnv   string `json:"app_env"`
 		} `json:"global"`
 	} `json:"config"`
+}
+
+// freePort asks the kernel for an unused TCP port on 127.0.0.1.
+func freePort(t *testing.T) string {
+	t.Helper()
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := l.Addr().(*net.TCPAddr).Port
+	require.NoError(t, l.Close())
+	return strconv.Itoa(port)
 }
 
 func encryptWithAge(t *testing.T, store sops.Store, plaintext []byte) []byte {
@@ -92,14 +105,13 @@ func TestE2EWorkflow(t *testing.T) {
 		etcdEndpoint = "127.0.0.1:2379"
 	}
 
-	// Verify etcd connectivity
+	// Verify etcd connectivity (since E2E=1 is explicitly requested, fail rather than skip)
 	etcdClient, err := clientv3.New(clientv3.Config{
 		Endpoints:   []string{etcdEndpoint},
 		DialTimeout: 2 * time.Second,
 	})
 	if err != nil {
-		t.Skipf("Skipping E2E test: unable to connect to etcd at %s: %v", etcdEndpoint, err)
-		return
+		t.Fatalf("E2E test failed: unable to connect to etcd at %s: %v", etcdEndpoint, err)
 	}
 	defer func() { _ = etcdClient.Close() }()
 
@@ -107,15 +119,19 @@ func TestE2EWorkflow(t *testing.T) {
 	defer cancelPing()
 	_, err = etcdClient.Get(ctxPing, "ping")
 	if err != nil {
-		t.Skipf("Skipping E2E test: etcd not responding at %s: %v", etcdEndpoint, err)
-		return
+		t.Fatalf("E2E test failed: etcd not responding at %s: %v", etcdEndpoint, err)
 	}
+
+	// Use a per-run free HTTP port and derive a unique etcd prefix from it, so
+	// concurrent test invocations do not collide on either resource.
+	httpPort := freePort(t)
+	prefix := fmt.Sprintf("/e2e/config/%s", httpPort)
 
 	// Clean up test prefix before and after test
 	cleanPrefix := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		_, _ = etcdClient.Delete(ctx, defaultPrefix, clientv3.WithPrefix())
+		_, _ = etcdClient.Delete(ctx, prefix, clientv3.WithPrefix())
 	}
 	cleanPrefix()
 	defer cleanPrefix()
@@ -161,8 +177,8 @@ func TestE2EWorkflow(t *testing.T) {
 	out, err = cmdBuildSvc.CombinedOutput()
 	require.NoError(t, err, "failed to build testservice: %s", string(out))
 
-	// Step 3: Run `cfgctl push <configDir> --prefix /e2e/config --prune`
-	pushCmd := exec.Command(cfgctlBin, "push", configDir, "--prefix", defaultPrefix, "--endpoints", etcdEndpoint, "--prune")
+	// Step 3: Run `cfgctl push <configDir> --prefix <prefix> --prune`
+	pushCmd := exec.Command(cfgctlBin, "push", configDir, "--prefix", prefix, "--endpoints", etcdEndpoint, "--prune")
 	pushOut, err := pushCmd.CombinedOutput()
 	require.NoError(t, err, "cfgctl push failed: %s", string(pushOut))
 	t.Logf("Initial push result: %s", strings.TrimSpace(string(pushOut)))
@@ -174,7 +190,7 @@ func TestE2EWorkflow(t *testing.T) {
 	svcCmd := exec.CommandContext(svcCtx, testserviceBin)
 	svcCmd.Env = append(os.Environ(),
 		"ETCD_ENDPOINT="+etcdEndpoint,
-		"CONFIG_PREFIX="+defaultPrefix,
+		"CONFIG_PREFIX="+prefix,
 		"HTTP_ADDR=:"+httpPort,
 		sopsage.SopsAgeKeyEnv+"="+testAgeIdentity,
 	)
@@ -235,7 +251,7 @@ func TestE2EWorkflow(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "agents", "reviewer", "prompt.txt"), []byte("Review code carefully."), 0o644))
 
 	// Run `cfgctl push` again
-	pushCmd2 := exec.Command(cfgctlBin, "push", configDir, "--prefix", defaultPrefix, "--endpoints", etcdEndpoint, "--prune")
+	pushCmd2 := exec.Command(cfgctlBin, "push", configDir, "--prefix", prefix, "--endpoints", etcdEndpoint, "--prune")
 	pushOut2, err := pushCmd2.CombinedOutput()
 	require.NoError(t, err, "second cfgctl push failed: %s", string(pushOut2))
 	t.Logf("Second push result: %s", strings.TrimSpace(string(pushOut2)))

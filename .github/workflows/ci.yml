@@ -77,9 +77,9 @@ jobs:
         with:
           tool: just
 
-      - name: Start docker compose services (etcd, sops)
+      - name: Start docker compose services (etcd)
         run: |
-          docker compose up -d
+          docker compose up -d etcd
           docker compose ps
 
       - name: Wait for etcd readiness
@@ -92,6 +92,7 @@ jobs:
             echo "Waiting for etcd to become healthy ($i/30)..."
             sleep 1
           done
+          docker compose exec -T etcd etcdctl endpoint health
 
       - name: Run E2E tests
         env:
