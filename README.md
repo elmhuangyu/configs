@@ -283,10 +283,15 @@ trailing `/` for directories, `*` / `**` globs):
 
 ```text
 # .cfgctlignore
-secrets/
+secrets/*
 *.tmp
 !secrets/public.yaml
 ```
+
+Matching follows git rules: patterns are evaluated in order and the last match
+wins, and a fully excluded directory (`secrets/`) is pruned, so files inside it
+cannot be re-included with `!`. Use a glob (`secrets/*`) when you need to
+re-include a specific file.
 
 ---
 

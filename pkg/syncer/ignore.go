@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	gitignore "github.com/sabhiram/go-gitignore"
+	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 )
 
 // IgnoreFileName is the optional gitignore-style file honoured by both
@@ -16,8 +16,13 @@ import (
 // directory and its patterns are matched against paths relative to that root.
 const IgnoreFileName = ".cfgctlignore"
 
+// commentPrefix marks a comment line in an ignore file, matching git.
+const commentPrefix = "#"
+
 // isBuiltinExcluded reports whether rel (slash separated, relative to the walk
-// root) is covered by a built-in exclude.
+// root) is covered by a built-in exclude: VCS metadata and SOPS' own
+// configuration, which must never be pushed as configuration nor re-encrypted
+// in place.
 func isBuiltinExcluded(rel string) bool {
 	if rel == "" || rel == "." {
 		return false
@@ -37,28 +42,36 @@ func isBuiltinExcluded(rel string) bool {
 // ignoreMatcher combines the built-in excludes with the patterns of a
 // .cfgctlignore file.
 type ignoreMatcher struct {
-	patterns *gitignore.GitIgnore
+	patterns gitignore.Matcher
 }
 
 // loadIgnore reads <root>/.cfgctlignore if present. A missing file is not an
-// error; the built-in excludes still apply.
+// error; the built-in excludes still apply. Comment and blank lines are
+// skipped, as in git.
 func loadIgnore(root string) (*ignoreMatcher, error) {
-	lines, err := readLines(filepath.Join(root, IgnoreFileName))
+	lines, err := readIgnoreLines(filepath.Join(root, IgnoreFileName))
 	if err != nil {
 		return nil, err
 	}
-	return &ignoreMatcher{patterns: gitignore.CompileIgnoreLines(lines...)}, nil
+
+	patterns := make([]gitignore.Pattern, 0, len(lines))
+	for _, line := range lines {
+		patterns = append(patterns, gitignore.ParsePattern(line, nil))
+	}
+	return &ignoreMatcher{patterns: gitignore.NewMatcher(patterns)}, nil
 }
 
 // matches reports whether rel is excluded from processing.
-func (m *ignoreMatcher) matches(rel string) bool {
+func (m *ignoreMatcher) matches(rel string, isDir bool) bool {
 	if isBuiltinExcluded(rel) {
 		return true
 	}
-	return m.patterns.MatchesPath(rel)
+	return m.patterns.Match(strings.Split(rel, "/"), isDir)
 }
 
-func readLines(name string) ([]string, error) {
+// readIgnoreLines returns the meaningful lines of an ignore file, dropping
+// comments and blanks.
+func readIgnoreLines(name string) ([]string, error) {
 	f, err := os.Open(name)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -71,7 +84,11 @@ func readLines(name string) ([]string, error) {
 	var lines []string
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
-		lines = append(lines, sc.Text())
+		line := sc.Text()
+		if strings.HasPrefix(line, commentPrefix) || strings.TrimSpace(line) == "" {
+			continue
+		}
+		lines = append(lines, line)
 	}
 	return lines, sc.Err()
 }
@@ -97,12 +114,12 @@ func walkConfigFiles(root string, fn func(rel, full string) error) error {
 		rel = filepath.ToSlash(rel)
 
 		if d.IsDir() {
-			if rel != "." && ign.matches(rel) {
+			if rel != "." && ign.matches(rel, true) {
 				return fs.SkipDir
 			}
 			return nil
 		}
-		if ign.matches(rel) {
+		if ign.matches(rel, false) {
 			return nil
 		}
 		return fn(rel, p)
