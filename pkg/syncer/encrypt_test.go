@@ -120,3 +120,25 @@ func TestEncryptDirectoryWithoutKeys(t *testing.T) {
 	assert.Contains(t, joined, "encrypt --in-place")
 	assert.NotContains(t, joined, "--gcp-kms")
 }
+
+func TestEncryptDirectoryHonorsIgnore(t *testing.T) {
+	invocations := stubSops(t)
+
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".git", "x.yaml"), []byte("a: b\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".sops.yaml"), []byte("creation_rules: []\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".cfgctlignore"), []byte("ignored.yaml\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "ignored.yaml"), []byte("a: b\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "app.yaml"), []byte("a: b\n"), 0o644))
+
+	report, err := EncryptDirectory(EncryptOptions{Dir: root})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"app.yaml"}, report.Encrypted)
+
+	joined := strings.Join(invocations(), "\n")
+	assert.NotContains(t, joined, ".git/")
+	assert.NotContains(t, joined, ".sops.yaml")
+	assert.NotContains(t, joined, "ignored.yaml")
+}

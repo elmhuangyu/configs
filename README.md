@@ -57,6 +57,7 @@ model that delivers lock-free reads and transaction-level atomic hot reloads.
 │   │   └── keypath.go
 │   └── syncer/               # shared sync/encryption core used by the CLI
 │       ├── encrypt.go
+│       ├── ignore.go         # .cfgctlignore handling + built-in excludes
 │       └── push.go
 ├── scripts/
 │   └── prune-plaintext.sh    # delete plaintext files that have an envelope
@@ -240,6 +241,24 @@ cfgctl push ./config --prefix /myapp/config --endpoints 127.0.0.1:2379 --prune
   an incremental overwrite.
 * If a file has a sibling `<name>.sops.json` envelope, the plaintext original is
   skipped and the encrypted version wins.
+
+### 5.4 Ignoring files: `.cfgctlignore`
+
+Both `encrypt` and `push` skip a fixed set of paths that must never be treated as
+configuration: `.git/`, `.gitignore`, `.sops.yaml` and `.cfgctlignore` itself.
+This keeps VCS metadata out of etcd and prevents `.sops.yaml` (which is itself
+a `.yaml` file) from ever being encrypted in place.
+
+Additional exclusions go in an optional **`.cfgctlignore`** file at the root of
+the processed directory. It uses gitignore syntax (comments, `!` negation,
+trailing `/` for directories, `*` / `**` globs):
+
+```text
+# .cfgctlignore
+secrets/
+*.tmp
+!secrets/public.yaml
+```
 
 ---
 

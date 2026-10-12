@@ -3,7 +3,6 @@ package syncer
 import (
 	"bytes"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,7 +80,8 @@ type EncryptReport struct {
 }
 
 // EncryptDirectory walks opts.Dir and encrypts every supported file using the
-// `sops` binary.
+// `sops` binary. Ignore rules apply (see IgnoreFileName and the built-in
+// excludes), so VCS metadata and .sops.yaml are never encrypted in place.
 //
 //   - Structured files (.yaml, .yml, .json) are encrypted in place with the
 //     default field-level strategy.
@@ -96,26 +96,14 @@ type EncryptReport struct {
 func EncryptDirectory(opts EncryptOptions) (EncryptReport, error) {
 	var report EncryptReport
 
-	err := filepath.WalkDir(opts.Dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if strings.HasSuffix(p, keypath.SOPSRawSuffix) {
+	err := walkConfigFiles(opts.Dir, func(rel, full string) error {
+		if strings.HasSuffix(full, keypath.SOPSRawSuffix) {
 			return nil
 		}
 
-		rel, err := filepath.Rel(opts.Dir, p)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-
-		switch filepath.Ext(p) {
+		switch filepath.Ext(full) {
 		case ".yaml", ".yml", ".json":
-			encrypted, err := isEncryptedFile(p)
+			encrypted, err := isEncryptedFile(full)
 			if err != nil {
 				return err
 			}
@@ -123,22 +111,22 @@ func EncryptDirectory(opts EncryptOptions) (EncryptReport, error) {
 				report.Skipped = append(report.Skipped, rel)
 				return nil
 			}
-			if _, err := runSops(encryptArgs(opts.Keys, []string{"--in-place"}, p)); err != nil {
+			if _, err := runSops(encryptArgs(opts.Keys, []string{"--in-place"}, full)); err != nil {
 				return err
 			}
 			report.Encrypted = append(report.Encrypted, rel)
 			return nil
 
 		case ".txt", ".pem", ".key":
-			if _, statErr := os.Stat(p + keypath.SOPSRawSuffix); statErr == nil {
+			if _, statErr := os.Stat(full + keypath.SOPSRawSuffix); statErr == nil {
 				report.StrayPlaintext = append(report.StrayPlaintext, rel)
 				return nil
 			}
-			out, err := runSops(encryptArgs(opts.Keys, []string{"--input-type", "binary", "--output-type", "json"}, p))
+			out, err := runSops(encryptArgs(opts.Keys, []string{"--input-type", "binary", "--output-type", "json"}, full))
 			if err != nil {
 				return err
 			}
-			if err := os.WriteFile(p+keypath.SOPSRawSuffix, out, 0o644); err != nil {
+			if err := os.WriteFile(full+keypath.SOPSRawSuffix, out, 0o644); err != nil {
 				return err
 			}
 			report.Encrypted = append(report.Encrypted, rel)

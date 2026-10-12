@@ -3,9 +3,7 @@ package syncer
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -93,32 +91,23 @@ func Push(ctx context.Context, client *clientv3.Client, opts PushOptions) error 
 	return nil
 }
 
-// CollectLocalFiles flattens dir into logical keys. Plain files shadowed by an
+// CollectLocalFiles flattens dir into logical keys. Ignore rules apply (see
+// IgnoreFileName and the built-in excludes). Plain files shadowed by an
 // encrypted raw envelope ("<name>.sops.json") are skipped, and the envelope is
 // exposed under the original logical path.
 func CollectLocalFiles(dir string) (map[string][]byte, error) {
 	files := make(map[string][]byte)
 
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if _, statErr := os.Stat(p + keypath.SOPSRawSuffix); statErr == nil {
+	err := walkConfigFiles(dir, func(rel, full string) error {
+		if _, statErr := os.Stat(full + keypath.SOPSRawSuffix); statErr == nil {
 			return nil
 		}
 
-		rel, err := filepath.Rel(dir, p)
+		data, err := os.ReadFile(full)
 		if err != nil {
 			return err
 		}
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		files[keypath.LogicalKey(filepath.ToSlash(rel))] = data
+		files[keypath.LogicalKey(rel)] = data
 		return nil
 	})
 	if err != nil {
