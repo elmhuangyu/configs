@@ -39,10 +39,8 @@ EXAMPLE_AGE_IDENTITY  := "AGE-SECRET-KEY-1G0Q5K9TV4REQ3ZSQRMTMG8NSWQGYT0T7TZ33RA
 example-encrypt: build
     rm -rf examples/configs-encrypted
     cp -r examples/configs-source examples/configs-encrypted
-    ./bin/cfgctl encrypt examples/configs-encrypted/raw --age {{EXAMPLE_AGE_RECIPIENT}}
-    ./bin/cfgctl encrypt examples/configs-encrypted/json --age {{EXAMPLE_AGE_RECIPIENT}}
-    ./bin/cfgctl encrypt examples/configs-encrypted/yaml --age {{EXAMPLE_AGE_RECIPIENT}}
-    ./scripts/prune-plaintext.sh examples/configs-encrypted/raw
+    ./bin/cfgctl encrypt examples/configs-encrypted --age {{EXAMPLE_AGE_RECIPIENT}}
+    ./scripts/prune-plaintext.sh examples/configs-encrypted
 
 # Push encrypted example configs to etcd
 example-push prefix="/myapp/config" endpoints="127.0.0.1:2379": build
