@@ -162,6 +162,9 @@ cfg := mgr.Get() // pure in-memory read, no lock contention
 All three share the same `key` convention and transparent decryption, so they are
 freely interchangeable.
 
+`EtcdSource` does not take ownership of the `*clientv3.Client` you pass in; its
+`Close` is a no-op so a shared client is never torn down by the source.
+
 ### 4.4 Error handling
 
 Reload failures are never silent. `ConfigManager.OnError` reports a revision that

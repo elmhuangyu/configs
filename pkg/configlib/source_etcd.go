@@ -18,7 +18,6 @@ const watchRetryDelay = 10 * time.Second
 type etcdKV interface {
 	Get(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error)
 	Watch(ctx context.Context, key string, opts ...clientv3.OpOption) clientv3.WatchChan
-	Close() error
 }
 
 // EtcdSource reads configuration from an etcd v3 cluster under a single prefix.
@@ -30,7 +29,8 @@ type EtcdSource struct {
 }
 
 // NewEtcdSource creates an EtcdSource. The prefix is normalised to end with a
-// trailing slash so relative keys never carry a leading slash.
+// trailing slash so relative keys never carry a leading slash. The source does
+// not take ownership of client; the caller remains responsible for closing it.
 func NewEtcdSource(client *clientv3.Client, prefix string) *EtcdSource {
 	return newEtcdSource(client, prefix)
 }
@@ -149,9 +149,10 @@ func (s *EtcdSource) session(ctx context.Context, out chan<- *Snapshot) string {
 	return "stream closed"
 }
 
-// Close closes the underlying etcd client.
+// Close is a no-op. The etcd client is typically shared with the rest of the
+// application and owned by the caller, so the source must not close it.
 func (s *EtcdSource) Close() error {
-	return s.client.Close()
+	return nil
 }
 
 // wait blocks for d unless ctx is done first, reporting whether the delay

@@ -104,8 +104,6 @@ func (f *fakeEtcd) Watch(ctx context.Context, _ string, _ ...clientv3.OpOption) 
 	return s.ch
 }
 
-func (f *fakeEtcd) Close() error { return nil }
-
 func TestEtcdSourceFetch(t *testing.T) {
 	fake := newFakeEtcd()
 	fake.put("/cfg/mode", "prod")
