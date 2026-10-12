@@ -20,6 +20,10 @@ import (
 //     relative to this path
 //   - struct without `key` tags  -> structured leaf, the exact key's payload is
 //     unmarshalled as YAML into the struct
+//
+// A `key`-tagged field whose type is none of the above (for example an int or a
+// pointer) is rejected with an error rather than silently ignored, so a typo in
+// a field type cannot leave a value permanently unset.
 func Bind(kvs FlattenKVs, target any) error {
 	v := reflect.ValueOf(target)
 	if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Struct {
@@ -49,7 +53,10 @@ func bindStruct(kvs FlattenKVs, currentPrefix string, val reflect.Value) error {
 		fullKey := path.Clean(path.Join(currentPrefix, keyTag))
 
 		switch {
-		case field.Type.Kind() == reflect.Map && field.Type.Key().Kind() == reflect.String:
+		case field.Type.Kind() == reflect.Map:
+			if field.Type.Key().Kind() != reflect.String {
+				return fmt.Errorf("field %s: map key must be a string, got %s", field.Name, field.Type.Key())
+			}
 			// Dynamic prefix: every entry below fullKey/ becomes a map entry.
 			if err := bindMap(kvs, fullKey, fieldVal); err != nil {
 				return err
@@ -91,6 +98,9 @@ func bindStruct(kvs FlattenKVs, currentPrefix string, val reflect.Value) error {
 					return fmt.Errorf("unmarshal %s: %w", fullKey, err)
 				}
 			}
+
+		default:
+			return fmt.Errorf("field %s: unsupported type %s for key %q", field.Name, field.Type, keyTag)
 		}
 	}
 	return nil

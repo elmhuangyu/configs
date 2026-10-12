@@ -80,6 +80,10 @@ field's Go type via reflection:
 | `Struct` with `key:` tags | **namespace prefix** | a path scope; child fields resolve relative to this path | `key:"global/"` |
 | `Struct` without `key:` tags | **structured leaf file** | exact key match; the payload is handed to `yaml.Unmarshal` | `key:"manifest.yaml"` |
 
+A `key`-tagged field of any other type (an `int`, a pointer, a non-string-keyed map)
+is rejected with an error rather than silently ignored, so a mistake in a field type
+cannot leave a value permanently zero.
+
 ### Key Path Convention
 
 Non-structured files (`.txt` / `.pem` / `.key`) are encrypted into a sibling

@@ -120,3 +120,23 @@ func TestBindRejectsScalarMapValue(t *testing.T) {
 	err := Bind(FlattenKVs{"values/a": []byte("1")}, &c)
 	assert.ErrorContains(t, err, "unsupported element type")
 }
+
+func TestBindRejectsUnsupportedType(t *testing.T) {
+	type cfg struct {
+		Port int `key:"port"`
+	}
+
+	var c cfg
+	err := Bind(FlattenKVs{"port": []byte("8080")}, &c)
+	require.ErrorContains(t, err, "unsupported type")
+}
+
+func TestBindRejectsNonStringMapKey(t *testing.T) {
+	type cfg struct {
+		Items map[int]agentConfig `key:"items/"`
+	}
+
+	var c cfg
+	err := Bind(FlattenKVs{"items/1/prompt.txt": []byte("x")}, &c)
+	require.ErrorContains(t, err, "map key must be a string")
+}
