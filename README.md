@@ -269,7 +269,12 @@ secrets/
    background goroutine rebuilds and swaps the value after each watch event.
 2. **Defensive reload**: a revision that fails to bind is dropped and the previous
    config is retained, so a broken config can never crash the process.
-3. **Transparent decryption**: `DecryptIfNeeded` first does a cheap `sops:` substring
+3. **Watch never goes silently stale**: the etcd driver re-establishes the watch
+   with a 10s backoff whenever the server cancels the stream (compaction, member
+   restart) and emits a catch-up snapshot on each reconnect, so changes missed
+   while disconnected are reconciled. Recoverable failures are surfaced through
+   `OnError` instead of being swallowed.
+4. **Transparent decryption**: `DecryptIfNeeded` first does a cheap `sops:` substring
    sniff and passes plaintext through at zero cost. On a hit it tries the SOPS stores
    in the order `binary -> yaml -> json`:
    * `binary` matches raw-mode envelopes (`*.sops.json`) whose payload is wrapped in a
@@ -277,7 +282,7 @@ secrets/
      `--input-type binary --output-type json`;
    * because JSON is a subset of YAML, trying `yaml` before `json` covers both
      structured formats.
-4. **Encryption decoupled from logical paths**: `.sops.json` is only a disk
+5. **Encryption decoupled from logical paths**: `.sops.json` is only a disk
    representation, stripped to a logical path on both push and read, keeping
    encryption fully hidden from business structs. The path<->logical-key convention
    lives in `pkg/keypath`, shared by `configlib` (consumer) and `syncer` (CLI) while
