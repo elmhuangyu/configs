@@ -159,3 +159,39 @@ func TestEncryptDirectoryHonorsIgnore(t *testing.T) {
 	assert.NotContains(t, joined, ".sops.yaml")
 	assert.NotContains(t, joined, "ignored.yaml")
 }
+
+func TestEncryptDirectorySkipsFilesWithNoMatchingCreationRules(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("stub sops relies on a POSIX shell script")
+	}
+
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "args.log")
+
+	// Stub sops to simulate exit 1 with "no matching creation rules found" for unmatched files
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$*\" >> \"$SOPS_LOG\"\n" +
+		"for arg in \"$@\"; do\n" +
+		"  case \"$arg\" in\n" +
+		"    *unmatched*) echo 'error loading config: no matching creation rules found' >&2; exit 1 ;;\n" +
+		"  esac\n" +
+		"done\n" +
+		"exit 0\n"
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "sops"), []byte(script), 0o755))
+	t.Setenv("SOPS_LOG", logPath)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "matched.yaml"), []byte("a: b\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "unmatched.md"), []byte("# Hello\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "unmatched.yaml"), []byte("c: d\n"), 0o644))
+
+	report, err := EncryptDirectory(EncryptOptions{Dir: root})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"matched.yaml"}, report.Encrypted)
+	// unmatched.md should NOT produce .sops.json
+	assert.NoFileExists(t, filepath.Join(root, "unmatched.md.sops.json"))
+}
+

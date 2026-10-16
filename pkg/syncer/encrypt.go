@@ -114,6 +114,9 @@ func EncryptDirectory(opts EncryptOptions) (EncryptReport, error) {
 			}
 			fileDir := filepath.Dir(absPath)
 			if _, err := runSops(fileDir, encryptArgs(opts.Keys, []string{"--in-place"}, absPath)); err != nil {
+				if strings.Contains(err.Error(), "no matching creation rules found") {
+					return nil
+				}
 				return err
 			}
 			report.Encrypted = append(report.Encrypted, rel)
@@ -123,6 +126,7 @@ func EncryptDirectory(opts EncryptOptions) (EncryptReport, error) {
 			// Non-structured (raw / scalar) files (e.g. .txt, .pem, .key, or extension-less
 			// secret files like antigravity-oauth-token, gemini-api-key, id_ed25519) are
 			// wrapped into a SOPS binary envelope: <name>.sops.json.
+			// If .sops.yaml defines no matching creation rule for this file, it remains plaintext.
 			if _, statErr := os.Stat(full + cfgfs.SOPSRawSuffix); statErr == nil {
 				report.StrayPlaintext = append(report.StrayPlaintext, rel)
 				return nil
@@ -134,6 +138,9 @@ func EncryptDirectory(opts EncryptOptions) (EncryptReport, error) {
 			fileDir := filepath.Dir(absPath)
 			out, err := runSops(fileDir, encryptArgs(opts.Keys, []string{"--input-type", "binary", "--output-type", "json"}, absPath))
 			if err != nil {
+				if strings.Contains(err.Error(), "no matching creation rules found") {
+					return nil
+				}
 				return err
 			}
 			if err := os.WriteFile(full+cfgfs.SOPSRawSuffix, out, 0o644); err != nil {
