@@ -119,7 +119,10 @@ func EncryptDirectory(opts EncryptOptions) (EncryptReport, error) {
 			report.Encrypted = append(report.Encrypted, rel)
 			return nil
 
-		case ".txt", ".pem", ".key":
+		default:
+			// Non-structured (raw / scalar) files (e.g. .txt, .pem, .key, or extension-less
+			// secret files like antigravity-oauth-token, gemini-api-key, id_ed25519) are
+			// wrapped into a SOPS binary envelope: <name>.sops.json.
 			if _, statErr := os.Stat(full + cfgfs.SOPSRawSuffix); statErr == nil {
 				report.StrayPlaintext = append(report.StrayPlaintext, rel)
 				return nil
