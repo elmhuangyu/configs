@@ -192,3 +192,33 @@ func TestBindStrictEmptyMapIsAllowed(t *testing.T) {
 	require.NoError(t, BindStrict(FlattenKVs{}, &c))
 	assert.Empty(t, c.Agents)
 }
+
+// A missing optional key must not stop later fields from binding.
+func TestBindMissingKeyDoesNotSkipLaterFields(t *testing.T) {
+	type cfg struct {
+		First   string `key:"first"`
+		Missing []byte `key:"missing"`
+		Later   string `key:"later"`
+		LaterB  []byte `key:"later-blob"`
+		Third   struct {
+			Value string `key:"value"`
+		} `key:"third/"`
+	}
+	kvs := FlattenKVs{
+		"first":       []byte("a"),
+		"later":       []byte("b"),
+		"later-blob":  []byte("c"),
+		"third/value": []byte("d"),
+	}
+
+	var c cfg
+	require.NoError(t, Bind(kvs, &c))
+	assert.Equal(t, "a", c.First)
+	assert.Empty(t, c.Missing)
+	assert.Equal(t, "b", c.Later)
+	assert.Equal(t, "c", string(c.LaterB))
+	assert.Equal(t, "d", c.Third.Value)
+
+	var strict cfg
+	assert.Error(t, BindStrict(kvs, &strict), "strict mode must still reject the missing key")
+}

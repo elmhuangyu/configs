@@ -80,7 +80,13 @@ func bindStruct(kvs FlattenKVs, currentPrefix string, val reflect.Value, strict 
 		case field.Type.Kind() == reflect.String:
 			raw, ok := kvs[fullKey]
 			if !ok {
-				return missingKey(strict, fullKey, field.Name)
+				// Strict mode fails; otherwise leave the field zero and keep
+				// binding the remaining fields (a missing optional key must not
+				// silently drop every field declared after it).
+				if err := missingKey(strict, fullKey, field.Name); err != nil {
+					return err
+				}
+				continue
 			}
 			data, err := DecryptIfNeeded(raw)
 			if err != nil {
@@ -91,7 +97,13 @@ func bindStruct(kvs FlattenKVs, currentPrefix string, val reflect.Value, strict 
 		case field.Type.Kind() == reflect.Slice && field.Type.Elem().Kind() == reflect.Uint8:
 			raw, ok := kvs[fullKey]
 			if !ok {
-				return missingKey(strict, fullKey, field.Name)
+				// Strict mode fails; otherwise leave the field zero and keep
+				// binding the remaining fields (a missing optional key must not
+				// silently drop every field declared after it).
+				if err := missingKey(strict, fullKey, field.Name); err != nil {
+					return err
+				}
+				continue
 			}
 			data, err := DecryptIfNeeded(raw)
 			if err != nil {
@@ -110,7 +122,13 @@ func bindStruct(kvs FlattenKVs, currentPrefix string, val reflect.Value, strict 
 			// Structured leaf: unmarshal the exact key's payload as YAML.
 			raw, ok := kvs[fullKey]
 			if !ok {
-				return missingKey(strict, fullKey, field.Name)
+				// Strict mode fails; otherwise leave the field zero and keep
+				// binding the remaining fields (a missing optional key must not
+				// silently drop every field declared after it).
+				if err := missingKey(strict, fullKey, field.Name); err != nil {
+					return err
+				}
+				continue
 			}
 			data, err := DecryptIfNeeded(raw)
 			if err != nil {
